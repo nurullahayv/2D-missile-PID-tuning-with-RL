@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from envs.missile_pid_env import MissilePIDEnv
 from config import get_default_config
+from warsim.visualization.neon_renderer import NeonRenderer
 
 
 def evaluate_model(model_path: str,
@@ -77,6 +78,13 @@ def evaluate_model(model_path: str,
 
     print("\nRunning evaluation...")
 
+    # Initialize renderer if rendering is enabled
+    renderer = None
+    if render:
+        renderer = NeonRenderer(map_size=config['map_size'], dpi=100)
+        print("Live rendering enabled - displaying neon visualization")
+        import time
+
     for episode in range(n_episodes):
         obs, info = env.reset()
         episode_reward = 0
@@ -99,8 +107,28 @@ def evaluate_model(model_path: str,
             pid_history['ki'].append(info['pid_gains']['ki'])
             pid_history['kd'].append(info['pid_gains']['kd'])
 
-            if render:
-                env.render()
+            # Render with neon visualization
+            if render and renderer and episode_length % 2 == 0:
+                # Calculate distance
+                missile_pos = info['missile_position']
+                target_pos = info['target_position']
+                distance = np.sqrt((target_pos[0] - missile_pos[0])**2 +
+                                 (target_pos[1] - missile_pos[1])**2)
+
+                renderer.render_frame(
+                    missile_trajectory=env.missile.trajectory,
+                    target_trajectory=env.target.trajectory,
+                    missile_heading=env.missile.heading,
+                    target_heading=env.target.heading,
+                    hit_radius=config['hit_radius'],
+                    step=episode_length,
+                    distance=distance,
+                    pid_gains=info['pid_gains'],
+                    fuel=info['fuel'],
+                    title=f"Evaluation Episode {episode + 1} - {target_maneuver.capitalize()} Target"
+                )
+                renderer.show()
+                time.sleep(0.01)  # Small delay for smooth rendering
 
         # Record metrics
         episode_rewards.append(episode_reward)
@@ -135,6 +163,10 @@ def evaluate_model(model_path: str,
                                hit_success, final_distances,
                                pid_trajectories, output_dir)
 
+    # Cleanup renderer
+    if renderer:
+        renderer.close()
+
     return {
         'rewards': episode_rewards,
         'lengths': episode_lengths,
@@ -145,7 +177,38 @@ def evaluate_model(model_path: str,
 
 
 def plot_trajectory(env: MissilePIDEnv, episode: int, output_dir: str):
-    """Plot missile and target trajectories"""
+    """Plot missile and target trajectories with neon style"""
+    # Use neon renderer for consistent visualization
+    renderer = NeonRenderer(map_size=env.map_size, dpi=150)
+
+    # Get final state
+    missile_pos = env.missile.position
+    target_pos = env.target.position
+    distance = np.sqrt((target_pos[0] - missile_pos[0])**2 +
+                      (target_pos[1] - missile_pos[1])**2)
+
+    renderer.render_frame(
+        missile_trajectory=env.missile.trajectory,
+        target_trajectory=env.target.trajectory,
+        missile_heading=env.missile.heading,
+        target_heading=env.target.heading,
+        hit_radius=env.hit_radius,
+        step=len(env.missile.trajectory),
+        distance=distance,
+        pid_gains={
+            'kp': env.missile.pid.kp,
+            'ki': env.missile.pid.ki,
+            'kd': env.missile.pid.kd
+        },
+        fuel=env.missile.fuel_remaining,
+        title=f"Episode {episode + 1} - Final Trajectory"
+    )
+
+    # Save
+    renderer.save_frame(os.path.join(output_dir, f'trajectory_episode_{episode + 1}.png'))
+    renderer.close()
+
+    # Also create classic plot for comparison
     fig, ax = plt.subplots(figsize=(10, 10))
 
     # Plot missile trajectory
@@ -232,9 +295,24 @@ def plot_evaluation_summary(rewards: List[float],
     axes[1, 0].grid(True, alpha=0.3)
 
     # PID gains evolution (average across episodes)
-    avg_kp = np.mean([traj['kp'] for traj in pid_trajectories], axis=0)
-    avg_ki = np.mean([traj['ki'] for traj in pid_trajectories], axis=0)
-    avg_kd = np.mean([traj['kd'] for traj in pid_trajectories], axis=0)
+    # Handle different episode lengths by interpolating to common length
+    max_len = max(len(traj['kp']) for traj in pid_trajectories)
+
+    def interpolate_trajectory(traj_list, target_len):
+        """Interpolate trajectory to target length"""
+        if len(traj_list) == target_len:
+            return np.array(traj_list)
+        x_old = np.linspace(0, 1, len(traj_list))
+        x_new = np.linspace(0, 1, target_len)
+        return np.interp(x_new, x_old, traj_list)
+
+    kp_interp = [interpolate_trajectory(traj['kp'], max_len) for traj in pid_trajectories]
+    ki_interp = [interpolate_trajectory(traj['ki'], max_len) for traj in pid_trajectories]
+    kd_interp = [interpolate_trajectory(traj['kd'], max_len) for traj in pid_trajectories]
+
+    avg_kp = np.mean(kp_interp, axis=0)
+    avg_ki = np.mean(ki_interp, axis=0)
+    avg_kd = np.mean(kd_interp, axis=0)
 
     axes[1, 1].plot(avg_kp, label='Kp', linewidth=2)
     axes[1, 1].plot(avg_ki, label='Ki', linewidth=2)
@@ -278,7 +356,7 @@ if __name__ == "__main__":
                        choices=['straight', 'circular', 'zigzag', 'evasive'],
                        help='Target maneuver type')
     parser.add_argument('--render', action='store_true',
-                       help='Render during evaluation')
+                       help='Render during evaluation (shows live visualization)')
     parser.add_argument('--output_dir', type=str, default='./evaluation_results',
                        help='Directory to save results')
 
