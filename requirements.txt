@@ -1,0 +1,8 @@
+gymnasium==0.29.1
+numpy==1.24.3
+torch>=2.0.0
+stable-baselines3>=2.0.0
+tensorboard>=2.13.0
+matplotlib>=3.7.0
+tqdm
+pyyaml

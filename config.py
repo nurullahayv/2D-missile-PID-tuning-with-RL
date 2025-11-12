@@ -1,112 +1,150 @@
+"""
+Configuration for Missile PID Tuning with RL
+"""
 import argparse
 import os
-import datetime
+from typing import Dict
 
-class Config(object):
-    """
-    Configurations for HHMARL Training. 
-    Mode 0 = Low-level training
-    Mode 1 = High-level training
-    Mode 2 = Evaluation
-    """
-    def __init__(self, mode:int):
+
+class Config:
+    """Configuration class for training and evaluation"""
+
+    def __init__(self, mode: str = "train"):
+        """
+        Initialize configuration
+
+        Args:
+            mode: "train" or "eval"
+        """
         self.mode = mode
-        parser = argparse.ArgumentParser(description='HHMARL2D Training Config')
+        parser = argparse.ArgumentParser(description='Missile PID RL Training Config')
 
-        # training mode
-        parser.add_argument('--level', type=int, default=1, help='Training Level')
-        parser.add_argument('--horizon', type=int, default=500, help='Length of horizon')
-        parser.add_argument('--agent_mode', type=str, default="fight", help='Agent mode: Fight or Escape')
-        parser.add_argument('--num_agents', type=int, default=2 if mode==0 else 3, help='Number of (trainable) agents')
-        parser.add_argument('--num_opps', type=int, default=2 if mode==0 else 3, help='Number of opponents')
-        parser.add_argument('--total_num', type=int, default=4 if mode==0 else 6, help='Total number of aircraft')
-        parser.add_argument('--hier_opp_fight_ratio', type=int, default=75, help='Opponent fight policy selection probability [in %].')
+        # Environment parameters
+        parser.add_argument('--max_steps', type=int, default=500,
+                          help='Maximum steps per episode')
+        parser.add_argument('--dt', type=float, default=0.1,
+                          help='Time step in seconds')
+        parser.add_argument('--map_size', type=float, default=10000.0,
+                          help='Map size in meters')
+        parser.add_argument('--hit_radius', type=float, default=50.0,
+                          help='Hit radius in meters')
+        parser.add_argument('--target_maneuver', type=str, default='straight',
+                          choices=['straight', 'circular', 'zigzag', 'evasive'],
+                          help='Target maneuver type')
 
-        # env & training params
-        parser.add_argument('--eval', type=bool, default=True, help='Enable evaluation mode')
-        parser.add_argument('--render', type=bool, default=False, help='Render the scene and show live behaviour')
-        parser.add_argument('--restore', type=bool, default=False, help='Restore from model')
-        parser.add_argument('--restore_path', type=str, default=None, help='Path to stored model')
-        parser.add_argument('--log_name', type=str, default=None, help='Experiment Name, defaults to Commander + date & time.')
-        parser.add_argument('--log_path', type=str, default=None, help='Full Path to actual trained model')
+        # Training parameters
+        parser.add_argument('--algorithm', type=str, default='PPO',
+                          choices=['PPO', 'SAC', 'TD3'],
+                          help='RL algorithm to use')
+        parser.add_argument('--total_timesteps', type=int, default=1_000_000,
+                          help='Total training timesteps')
+        parser.add_argument('--learning_rate', type=float, default=3e-4,
+                          help='Learning rate')
+        parser.add_argument('--batch_size', type=int, default=64,
+                          help='Batch size for training')
+        parser.add_argument('--n_steps', type=int, default=2048,
+                          help='Number of steps per update (PPO)')
+        parser.add_argument('--gamma', type=float, default=0.99,
+                          help='Discount factor')
 
-        parser.add_argument('--gpu', type=float, default=0)
-        parser.add_argument('--num_workers', type=int, default=4, help='Number of parallel samplers')
-        parser.add_argument('--epochs', type=int, default=10000, help='Number training epochs')
-        parser.add_argument('--batch_size', type=int, default=2000 if mode==0 else 1000, help='PPO train batch size')
-        parser.add_argument('--mini_batch_size', type=int, default=256, help='PPO train mini batch size')
-        parser.add_argument('--map_size', type=float, default=0.3 if mode==0 else 0.5, help='Map size -> *100 = [km]')
+        # Model parameters
+        parser.add_argument('--hidden_size', type=int, default=256,
+                          help='Hidden layer size')
+        parser.add_argument('--n_layers', type=int, default=2,
+                          help='Number of hidden layers')
 
-        # rewards
-        parser.add_argument('--glob_frac', type=float, default=0, help='Fraction of reward sharing')
-        parser.add_argument('--rew_scale', type=int, default=1, help='Reward scale')
-        parser.add_argument('--esc_dist_rew', type=bool, default=False, help='Activate per-time-step reward for Escape Training.')
-        parser.add_argument('--hier_action_assess', type=bool, default=True, help='Give action rewards to guide hierarchical training.')
-        parser.add_argument('--friendly_kill', type=bool, default=True, help='Consider friendly kill or not.')
-        parser.add_argument('--friendly_punish', type=bool, default=False, help='If friendly kill occurred, if both agents to punish.')
+        # Logging and saving
+        parser.add_argument('--log_dir', type=str, default='./logs',
+                          help='Directory for logs')
+        parser.add_argument('--save_dir', type=str, default='./models',
+                          help='Directory for saving models')
+        parser.add_argument('--save_freq', type=int, default=50000,
+                          help='Save model every N steps')
+        parser.add_argument('--eval_freq', type=int, default=10000,
+                          help='Evaluate every N steps')
+        parser.add_argument('--n_eval_episodes', type=int, default=10,
+                          help='Number of episodes for evaluation')
 
-        # eval
-        parser.add_argument('--eval_info', type=bool, default=True if mode==2 else False, help='Provide eval statistic in step() function or not. Dont change for evaluation.')
-        parser.add_argument('--eval_hl', type=bool, default=True, help='True=evaluation with Commander, False=evaluation of low-level policies.')
-        parser.add_argument('--eval_level_ag', type=int, default=5, help='Agent low-level for evaluation.')
-        parser.add_argument('--eval_level_opp', type=int, default=4, help='Opponent low-level for evaluation.')
-        
-        parser.add_argument('--env_config', type=dict, default=None, help='Environment values')
-        
+        # Device
+        parser.add_argument('--device', type=str, default='auto',
+                          choices=['auto', 'cuda', 'cpu'],
+                          help='Device to use for training')
+
+        # Experiment
+        parser.add_argument('--exp_name', type=str, default=None,
+                          help='Experiment name')
+        parser.add_argument('--seed', type=int, default=42,
+                          help='Random seed')
+
+        # Evaluation
+        parser.add_argument('--model_path', type=str, default=None,
+                          help='Path to trained model for evaluation')
+        parser.add_argument('--render', action='store_true',
+                          help='Render during evaluation')
+        parser.add_argument('--save_video', action='store_true',
+                          help='Save video during evaluation')
+
         self.args = parser.parse_args()
-        self.set_metrics()
+        self._process_args()
 
-    def set_metrics(self):
+    def _process_args(self):
+        """Process and validate arguments"""
+        # Create directories
+        os.makedirs(self.args.log_dir, exist_ok=True)
+        os.makedirs(self.args.save_dir, exist_ok=True)
 
-        #self.args.log_name = f'Commander_{datetime.datetime.now().strftime("%Y-%m-%d_%H:%M")}'
-        self.args.log_name = f'L{self.args.level}_{self.args.agent_mode}_{self.args.num_agents}-vs-{self.args.num_opps}' if self.mode == 0 else f'Commander_{self.args.num_agents}_vs_{self.args.num_opps}'
-        self.args.log_path = os.path.join(os.path.dirname(__file__), 'results', self.args.log_name)
+        # Set experiment name
+        if self.args.exp_name is None:
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.args.exp_name = f"missile_pid_{self.args.algorithm}_{self.args.target_maneuver}_{timestamp}"
 
-        if not self.args.restore and self.mode==0:
-            if self.args.agent_mode == "fight" and os.path.exists(os.path.join(os.path.dirname(__file__), 'results', f'L{self.args.level-1}_{self.args.agent_mode}_{self.args.num_agents}-vs-{self.args.num_opps}')):
-                self.args.restore = True
-            elif self.args.agent_mode == "escape" and os.path.exists(os.path.join(os.path.dirname(__file__), 'results', f'L3_{self.args.agent_mode}_{self.args.num_agents}-vs-{self.args.num_opps}')):
-                self.args.restore = True
+        # Update paths with experiment name
+        self.args.log_dir = os.path.join(self.args.log_dir, self.args.exp_name)
+        self.args.save_dir = os.path.join(self.args.save_dir, self.args.exp_name)
 
-        if self.args.restore:
-            if self.args.restore_path is None:
-                if self.mode == 0:
-                    try:
-                        if self.args.agent_mode=="fight":
-                            # take previous pi_fight
-                            self.args.restore_path = os.path.join(os.path.dirname(__file__), 'results', f'L{self.args.level-1}_{self.args.agent_mode}_{self.args.num_agents}-vs-{self.args.num_opps}', 'checkpoint')
-                        else:
-                            # escape-vs-pi_fight
-                            self.args.restore_path = os.path.join(os.path.dirname(__file__), 'results', f'L3_{self.args.agent_mode}_{self.args.num_agents}-vs-{self.args.num_opps}', 'checkpoint')
-                    except:
-                        raise NameError(f'Could not restore previous {self.args.agent_mode} policy. Check restore_path.')
-                else:
-                    raise NameError('Specify full restore path to Commander Policy.')
+        os.makedirs(self.args.log_dir, exist_ok=True)
+        os.makedirs(self.args.save_dir, exist_ok=True)
 
-        if self.args.agent_mode == "escape" and self.mode==0:
-            if not os.path.exists(os.path.join(os.path.dirname(__file__), 'results', f'L3_escape_2-vs-2')):
-                self.args.level = 3
-            else:
-                self.args.level = 5
-            self.args.log_name = f'L{self.args.level}_{self.args.agent_mode}_{self.args.num_agents}-vs-{self.args.num_opps}'
-            self.args.log_path = os.path.join(os.path.dirname(__file__), 'results', self.args.log_name)
-
-        if self.mode == 0:
-            horizon_level = {1: 150, 2:200, 3:300, 4:350, 5:400}
-            self.args.horizon = horizon_level[self.args.level]
-        else:
-            self.args.horizon = 500
-
-        if self.mode == 2 and self.args.eval_hl:
-            # when incorporating Commander, both teams are on same level.
-            self.args.eval_level_ag = self.args.eval_level_opp = 5
-
-        self.args.eval = True if self.args.render else self.args.eval
-
-        self.args.total_num = self.args.num_agents + self.args.num_opps
-        self.args.env_config = {"args": self.args}
+    def get_env_config(self) -> Dict:
+        """Get environment configuration"""
+        return {
+            'max_steps': self.args.max_steps,
+            'dt': self.args.dt,
+            'map_size': self.args.map_size,
+            'hit_radius': self.args.hit_radius,
+            'target_maneuver': self.args.target_maneuver,
+        }
 
     @property
     def get_arguments(self):
+        """Get all arguments"""
         return self.args
 
+
+def get_default_config(target_maneuver: str = "straight") -> Dict:
+    """Get default configuration without argparse"""
+    return {
+        # Environment
+        'max_steps': 500,
+        'dt': 0.1,
+        'map_size': 10000.0,
+        'hit_radius': 50.0,
+        'target_maneuver': target_maneuver,
+
+        # Training
+        'algorithm': 'PPO',
+        'total_timesteps': 1_000_000,
+        'learning_rate': 3e-4,
+        'batch_size': 64,
+        'n_steps': 2048,
+        'gamma': 0.99,
+
+        # Model
+        'hidden_size': 256,
+        'n_layers': 2,
+
+        # Other
+        'seed': 42,
+        'device': 'auto',
+    }

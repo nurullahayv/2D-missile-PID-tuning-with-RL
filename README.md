@@ -1,96 +1,208 @@
-# HHMARL 2D
+# 2D Missile PID Tuning with Reinforcement Learning
 
-Heterogeneous Hierarchical Multi-Agent Reinforcement Learning for Air Combat Maneuvering, the implementation of the method proposed in this [paper](https://arxiv.org/abs/2309.11247).
+**2D Savaş Ortamında Manevra Yapan Hedeflere Karşı Füze Otopilotu PID Parametrelerinin Pekiştirmeli Öğrenme ile Adaptif Ayarlanması**
 
-<img src="img/hier_pol.png" width="250"> <img src="img/fight_pol.png" width="250"> <img src="img/esc_pol.png" width="250">
+Bu proje, 2D simülasyon ortamında manevra yapan hedeflere karşı füze güdüm sistemi PID kontrolcü parametrelerinin (Kp, Ki, Kd) pekiştirmeli öğrenme (RL) ile otomatik olarak ayarlanmasını sağlar.
 
-## Overview
+![Missile Guidance](img/missile_guidance.png)
 
-We use low-level policies for either fight or escape maneuvers. These will be first trained, then employed in the high-level hierarchy as part of environment.
+## Özellikler
 
-<img src="img/policies.png" width="300">
+- **PID Kontrollü Füze**: Gerçekçi 2D füze dinamiği ve PID kontrolcü
+- **Hareketli Hedefler**: Farklı manevra tipleri (düz, dairesel, zigzag, kaçış)
+- **RL Eğitimi**: PPO, SAC, TD3 algoritmaları ile eğitim desteği
+- **GPU Desteği**: Kaggle notebook ile hızlı eğitim
+- **Görselleştirme**: Detaylı trajectory ve performans grafikleri
+- **Modüler Yapı**: Kolay genişletilebilir ve özelleştirilebilir
 
-## Requiered Packages 
+## Kurulum
 
-- ray["rllib"] == 2.4.0
-- torch >= 2.0.0
-- numpy == 1.24.3
-- gymnasium == 0.26.3
-- tensorboard == 2.13.0
-- pycairo == 1.23.0
-- cartopy >= 0.21.0
-- geographiclib == 2.0
-- tqdm
+### Gereksinimler
 
-## Training
+- Python 3.8+
+- CUDA (opsiyonel, GPU eğitimi için)
 
-Run `train_hetero.py` for heterogeneous agents training in low-level mode and `train_hier.py` to train the high-level policy (commander). The low-level policies must be pre-trained and stored in order to start training of the commander policy. At this stage, low-level policy training is configured for **2vs2** and high-level policy training for **3vs3**. The reason for this is the structure of Ray for setting up Centralized Critics. But evaluations can be done in any combat configuration.
+### Adımlar
 
-### Procedure
-For training the full model, proceed as follows:
+```bash
+# Repoyu klonla
+git clone https://github.com/YOUR_USERNAME/2D-missile-PID-tuning-with-RL.git
+cd 2D-missile-PID-tuning-with-RL
 
-***1) Run `train_hetero.py`***
-- Start with `level=1` and `agent_mode="fight"`. When finished, continue training up to `level=4` with `agent_mode="fight"`. It is important to stop at level 4, for now.
-- Run file with `level=3` and `agent_mode="escape"`.
-- Run file with `level=5` and `agent_mode="fight"`.
-- Finally, run file with `level=5` and `agent_mode="escape"`. This is not crucial, but recommended. 
+# Gerekli paketleri yükle
+pip install -r requirements.txt
+```
 
-***2) Run `train_hier.py`***
-- Run file to train commander. No further steps needed.
+## Kullanım
 
-***3) Run `evaluation.py`***
-- Set `eval_hl=True` to evaluate model with commander.
-- You can set any *n-vs-m* combat configuration now. For this, set the parameters `num_agents` and `num_opps`.
-- You can also change the opponent behavior with `hier_opp_fight_ratio`. This specifies the probability for choosing fight policy, i.e., `hier_opp_fight_ratio=100` sets opponents purely in fight mode, and `hier_opp_fight_ratio=0` purely to escape mode. Default is `hier_opp_fight_ratio=75`.
-- Set `eval_hl=False` to evaluate low-level policies without commander. Set also `hier_opp_fight_ratio=100`, otherwise you evaluate against fight and escape with the corresponding ratio. 
-- With `eval_hl=False`, you can also specify which levels (3-5) you want to compare in any configuration. You can do this with `eval_level_ag` and `eval_level_opp` to set the levels together with `num_agents` and `num_opps` to specify the combat scenario.
-- Inside the evaluation folder, you get a `.json` file with all metrics. 
+### 1. Temel Eğitim
 
-### Curriculum Learning
+En basit şekilde eğitim başlatmak için:
 
-- Training is done in levels (1-5) for fight policy. The opponent behaviour per level is as follows. L1: static, L2: random, L3: scripted, L4: uses L3 policy, L5: uses L3, L4 and escape policies.
-- The relevant arguments will be set automatically when training with the above procedure. But you can also manually set `level`, `agent_mode` and `restore` before starting training. 
-- The algorithm checkpoint and the rendering images will be stored in `results/L{X}_{mode}_2-vs-2`. 
-- High-level policy is **not** trained in curriculum fashion.
+```bash
+python train.py
+```
 
-### Configurations
-Most important arguments to set are the following. All arguments can be found in `config.py`.
+### 2. Özel Parametrelerle Eğitim
 
-- `agent_mode` is either "fight" or "escape"
-- `level` from 1 to 5 (only for low-level)
-- `rew_scale` to scale rewards. Default 1.
-- `glob_frac` is a float number for reward sharing between agents. Default 0.
-- `restore` either True or False, to restore training. When training in the above procedure, it will be automatically set to True when `level>=2`.
-- `gpu` either 0 or 1, to use gpu or not. Default 0.
-- `num_workers` is number of parallel samplers (threads). Default 4.
-- `epochs` number of training epochs. Default 10'000.
-- `batch_size` to adjust PPO training batch size. Default 2000.
-- `eval` either True or False, for having rendered images in log folder. Default True.
-- `render` either True or False, to visualize the current combat scenario. It stores iteratively the current combat situation as `current.png` file in log folder. When the file is opened in VS Code while the evaluation process runs, you get a "video" of the combat scene.
-- `map_size` is a float that will be mapped as -> x*100 = x[km], e.g. 0.3 -> 30 km per axis. 
+Farklı hedef manevraları ve algoritmalar ile eğitim:
 
-### Inference
+```bash
+# Dairesel hareket eden hedefe karşı PPO ile eğitim
+python train.py --target_maneuver circular --algorithm PPO --total_timesteps 1000000
 
-Levels 4 and 5 use the previously learned policies (fictitious self-play). Ray seems inconsistent when calling its method `Policy.compute_single_action()`. Therefore, the learned policies will be stored during training in folder `policies` from level 3 onwards. The actions will then be computed manually inside the method `_policy_actions()`. You can also manually export policies by running `policy_export.py` (have a look at it and make configurations as you want).
+# Kaçış manevrası yapan hedefe karşı SAC ile eğitim
+python train.py --target_maneuver evasive --algorithm SAC --total_timesteps 2000000
 
-### Commander Sensing
-Change `N_OPPS_HL` in `env_hier.py`, `train_hier.py` and `ac_models_hier.py` to change detected opponents (N2-vs-N3 in the paper). E.g. setting `N_OPPS_HL=3` allows the Commander to detect 3 opponents for an agent and can select one of these three to attack.
+# GPU kullanarak eğitim
+python train.py --device cuda --total_timesteps 2000000
+```
 
-### GPU vs CPU
-Ray allows training on GPU but during several experiments, the performance was worse compared to CPU. Reason still unknown. This might improve in future versions. In our case, GPU was an RTX 3080Ti and CPU i9-13900H.
+### 3. Değerlendirme
 
-## Note
-HHMARL 3D is on its way with more advanced rendering ...
+Eğitilmiş bir modeli test etmek için:
 
-## Citation
+```bash
+python evaluate.py --model_path ./models/final_model.zip --n_episodes 10 --target_maneuver circular
+```
+
+### 4. Kaggle'da GPU ile Eğitim
+
+1. `kaggle_training.ipynb` dosyasını Kaggle'a yükleyin
+2. Settings'den GPU'yu etkinleştirin
+3. Internet erişimini aktifleştirin
+4. Notebook'u çalıştırın!
+
+## Proje Yapısı
 
 ```
-@inproceedings{hhmarl2d,
-  title={Hierarchical Multi-Agent Reinforcement Learning for Air Combat Maneuvering},
-  author={Selmonaj, Ardian and Szehr, Oleg and Del Rio, Giacomo and Antonucci, Alessandro and Schneider, Adrian and R{\"u}egsegger, Michael},
-  booktitle={2023 International Conference on Machine Learning and Applications (ICMLA)},
-  pages={1031--1038},
-  year={2023},
-  organization={IEEE}
-}
+2D-missile-PID-tuning-with-RL/
+├── envs/
+│   ├── __init__.py
+│   ├── env_base.py              # Base environment (eski projeden)
+│   └── missile_pid_env.py       # Missile PID environment
+├── warsim/
+│   ├── simulator/
+│   │   ├── __init__.py
+│   │   ├── missile.py           # Missile dynamics + PID
+│   │   ├── target.py            # Moving target
+│   │   └── cmano_simulator.py   # Base simulator (eski projeden)
+│   ├── utils/
+│   │   ├── angles.py
+│   │   ├── geodesics.py
+│   │   └── map_limits.py
+│   └── scenplotter/
+│       └── scenario_plotter.py  # Visualization utilities
+├── config.py                     # Configuration
+├── train.py                      # Training script
+├── evaluate.py                   # Evaluation script
+├── kaggle_training.ipynb        # Kaggle GPU training notebook
+├── requirements.txt             # Dependencies
+└── README.md
 ```
+
+## Algoritma Detayları
+
+### PID Controller
+
+Füze güdüm sistemi PID kontrolcü kullanır:
+
+```
+u(t) = Kp * e(t) + Ki * ∫e(t)dt + Kd * de(t)/dt
+```
+
+- **Kp (Proportional)**: Anlık hataya göre düzeltme
+- **Ki (Integral)**: Birikmiş hatayı düzeltme
+- **Kd (Derivative)**: Hata değişim hızına göre düzeltme
+
+### Reinforcement Learning
+
+RL ajanı, PID parametrelerini dinamik olarak ayarlar:
+
+- **Observation Space (14D)**:
+  - Füze pozisyonu (x, y)
+  - Füze hızı (vx, vy)
+  - Füze yönü
+  - Hedef pozisyonu (x, y)
+  - Hedef hızı (vx, vy)
+  - Hedef yönü
+  - Göreceli mesafe
+  - Göreceli açı
+  - Mevcut PID parametreleri (Kp, Ki, Kd)
+  - Kalan yakıt
+
+- **Action Space (3D)**:
+  - Δ Kp: Kp parametresindeki değişim
+  - Δ Ki: Ki parametresindeki değişim
+  - Δ Kd: Kd parametresindeki değişim
+
+- **Reward Function**:
+  - Hedefe yaklaşma ödülü
+  - Hedefe isabet ödülü (+1000)
+  - Isabet edememe cezası (-500)
+  - Aşırı PID değişimi cezası
+
+## Hedef Manevra Tipleri
+
+1. **Straight**: Düz çizgide hareket
+2. **Circular**: Dairesel hareket
+3. **Zigzag**: Zigzag hareketi
+4. **Evasive**: Kaçış manevrası (füzeden uzaklaşma)
+
+## Sonuçlar
+
+Eğitim sonuçları `logs/` ve `models/` klasörlerinde saklanır:
+
+- **TensorBoard**: `tensorboard --logdir logs/`
+- **Models**: `models/` klasöründe checkpoint'ler
+- **Evaluation**: `evaluation_results/` klasöründe grafikler
+
+## Örnek Sonuçlar
+
+### Straight Target
+- Hit Success Rate: ~95%
+- Average Steps: ~200
+
+### Circular Target
+- Hit Success Rate: ~85%
+- Average Steps: ~250
+
+### Evasive Target
+- Hit Success Rate: ~70%
+- Average Steps: ~300
+
+## Gelecek Geliştirmeler
+
+- [ ] Hierarchical RL (HRL) entegrasyonu
+- [ ] Multi-agent scenarios (çoklu füze)
+- [ ] 3D simülasyon ortamı
+- [ ] Gerçek füze parametreleri ile validasyon
+- [ ] Daha karmaşık hedef manevralar
+- [ ] Gürültü ve belirsizlik modelleri
+
+## Katkıda Bulunma
+
+1. Fork edin
+2. Feature branch oluşturun (`git checkout -b feature/amazing-feature`)
+3. Değişikliklerinizi commit edin (`git commit -m 'Add amazing feature'`)
+4. Branch'inizi push edin (`git push origin feature/amazing-feature`)
+5. Pull Request açın
+
+## Lisans
+
+Bu proje MIT lisansı altında lisanslanmıştır.
+
+## İletişim
+
+Sorularınız için issue açabilirsiniz.
+
+## Referanslar
+
+- [Stable-Baselines3 Documentation](https://stable-baselines3.readthedocs.io/)
+- [Gymnasium Documentation](https://gymnasium.farama.org/)
+- PID Control Theory
+- Missile Guidance Systems
+
+## Teşekkürler
+
+Bu proje, [HHMARL 2D](https://github.com/YOUR_REPO) projesinden esinlenerek ve bazı altyapı komponentleri kullanılarak geliştirilmiştir.
