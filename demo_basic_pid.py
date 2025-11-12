@@ -1,6 +1,6 @@
 """
 Demo: Basic PID Missile vs Moving Target
-Real-time visualization with Pygame
+3 Modes: fast (no render), realtime (smooth 60fps), replay
 Configurable PID parameters
 """
 import sys
@@ -13,6 +13,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from warsim.simulator.missile import Missile
 from warsim.simulator.target import Target
+from warsim.simulator.simulation_engine import (
+    SimulationEngine, RealtimeSimulation, ReplaySimulation
+)
 from warsim.visualization.pygame_renderer import PygameRenderer
 
 
@@ -24,7 +27,9 @@ def load_config(config_path: str = "config_pid.yaml") -> dict:
 
 def run_basic_pid_demo(target_maneuver: str = "circular",
                        pid_config: dict = None,
-                       max_steps: int = 500):
+                       max_steps: int = 50000,
+                       mode: str = "realtime",
+                       playback_speed: float = 1.0):
     """
     Run basic PID demonstration
 
@@ -32,6 +37,8 @@ def run_basic_pid_demo(target_maneuver: str = "circular",
         target_maneuver: Target maneuver type
         pid_config: PID configuration dict
         max_steps: Maximum simulation steps
+        mode: Simulation mode ('fast', 'realtime', 'replay')
+        playback_speed: Playback speed for replay mode
     """
     # Load config
     config = load_config()
@@ -47,18 +54,22 @@ def run_basic_pid_demo(target_maneuver: str = "circular",
     kd = pid_params['kd']
 
     # Simulation parameters
-    dt = config['simulation']['dt']
     map_size = config['simulation']['map_size']
     hit_radius = config['simulation']['hit_radius']
+    physics_hz = 100  # High frequency physics
 
-    print("=" * 60)
-    print("Basic PID Missile vs Moving Target")
-    print("=" * 60)
+    print("=" * 70)
+    print("Basic PID Missile vs Moving Target - Hybrid Simulation System")
+    print("=" * 70)
+    print(f"Mode: {mode.upper()}")
     print(f"Target Maneuver: {target_maneuver}")
     print(f"PID Parameters: Kp={kp:.3f}, Ki={ki:.3f}, Kd={kd:.3f}")
-    print(f"Map Size: {map_size}m x {map_size}m")
-    print("=" * 60)
-    print("\nPress ESC or Q to quit\n")
+    print(f"Physics Frequency: {physics_hz} Hz")
+    if mode == "realtime":
+        print(f"Render FPS: 60")
+    elif mode == "replay":
+        print(f"Playback Speed: {playback_speed}x")
+    print("=" * 70)
 
     # Random initial positions
     missile_x = np.random.uniform(0, map_size * 0.3)
@@ -90,107 +101,114 @@ def run_basic_pid_demo(target_maneuver: str = "circular",
     target.heading = target_heading
     target.initial_heading = target_heading
 
-    # Initialize renderer
-    renderer = PygameRenderer(map_size=map_size, window_size=(1200, 1000), fps=60)
+    # Create simulation engine
+    engine = SimulationEngine(
+        missile=missile,
+        target=target,
+        map_size=map_size,
+        hit_radius=hit_radius,
+        physics_hz=physics_hz,
+        max_steps=max_steps
+    )
 
-    # Simulation loop
-    step = 0
-    hit = False
-    out_of_fuel = False
-    out_of_bounds = False
+    # Run based on mode
+    if mode == "fast":
+        # Fast simulation without rendering
+        print("\nRunning FAST mode (no rendering)...\n")
+        history = engine.simulate_fast(record_interval=10)
 
-    print("Simulation running...")
+        # Print results
+        print("\n" + "=" * 70)
+        print("Simulation Results")
+        print("=" * 70)
+        print(f"Result: {'HIT' if history.hit else 'MISS'}")
+        print(f"Final Distance: {history.final_distance:.2f}m")
+        print(f"Physics Steps: {history.total_steps:,}")
+        print(f"Simulation Time: {history.total_time:.2f}s")
+        print("=" * 70)
 
-    while step < max_steps and renderer.is_running():
-        # Calculate distance
-        dx = target.x - missile.x
-        dy = target.y - missile.y
-        distance = np.sqrt(dx**2 + dy**2)
+        # Ask if user wants to replay
+        print("\nWould you like to replay this simulation? (y/n): ", end='')
+        choice = input().strip().lower()
+        if choice == 'y':
+            renderer = PygameRenderer(map_size=map_size, window_size=(1200, 1000), fps=60)
+            replay = ReplaySimulation(history, renderer)
+            replay.replay(playback_speed=1.0, render_fps=60)
+            renderer.close()
 
-        # Update entities
-        missile.update(target.x, target.y, dt)
-        target.update(dt, missile_position=(missile.x, missile.y))
+    elif mode == "realtime":
+        # Real-time simulation with smooth rendering
+        print("\nRunning REALTIME mode (100Hz physics, 60FPS render)...")
+        print("Press ESC or Q to quit\n")
 
-        # Render frame
-        pid_gains = {
-            'kp': missile.pid.kp,
-            'ki': missile.pid.ki,
-            'kd': missile.pid.kd
-        }
+        renderer = PygameRenderer(map_size=map_size, window_size=(1200, 1000), fps=60)
+        realtime = RealtimeSimulation(engine, renderer, render_fps=60)
+        history = realtime.run(mode_info="Basic PID (Fixed)")
 
-        success = renderer.render_frame(
-            missile_trajectory=missile.trajectory,
-            target_trajectory=target.trajectory,
-            missile_heading=missile.heading,
-            target_heading=target.heading,
-            hit_radius=hit_radius,
-            step=step,
-            distance=distance,
-            pid_gains=pid_gains,
-            fuel=missile.fuel_remaining,
-            mode="Basic PID (Fixed)",
-            title=f"Basic PID Demo - {target_maneuver.capitalize()} Target"
-        )
+        # Final stats
+        print("\n" + "=" * 70)
+        print("Simulation Results")
+        print("=" * 70)
+        print(f"Result: {'HIT' if history.hit else 'MISS'}")
+        print(f"Final Distance: {history.final_distance:.2f}m")
+        print(f"Physics Steps: {history.total_steps:,}")
+        print(f"Simulation Time: {history.total_time:.2f}s")
+        print("=" * 70)
 
-        if not success:
-            break
+        # Keep final frame visible
+        print("\nClose window to exit...")
+        while renderer.is_running():
+            state = engine.get_current_state()
+            renderer.render_frame(
+                missile_trajectory=history.missile_trajectory,
+                target_trajectory=history.target_trajectory,
+                missile_heading=state.missile_heading,
+                target_heading=state.target_heading,
+                hit_radius=hit_radius,
+                step=state.step,
+                distance=state.distance,
+                pid_gains={'kp': state.pid_kp, 'ki': state.pid_ki, 'kd': state.pid_kd},
+                fuel=state.missile_fuel,
+                mode="Basic PID (Fixed)",
+                title=f"Final State - {'HIT!' if history.hit else 'MISS'}"
+            )
 
-        # Check termination conditions
-        if distance < hit_radius:
-            hit = True
-            print(f"\n✓ TARGET HIT at step {step}")
-            print(f"   Distance: {distance:.2f}m")
-            break
+        renderer.close()
 
-        if not missile.active:
-            out_of_fuel = True
-            print(f"\n✗ OUT OF FUEL at step {step}")
-            break
+    elif mode == "replay":
+        # This mode requires pre-recorded history
+        print("\nREPLAY mode requires pre-recorded simulation.")
+        print("Running fast simulation first...\n")
 
-        if (missile.x < 0 or missile.x > map_size or
-            missile.y < 0 or missile.y > map_size):
-            out_of_bounds = True
-            print(f"\n✗ OUT OF BOUNDS at step {step}")
-            break
+        history = engine.simulate_fast(record_interval=10)
 
-        step += 1
+        print(f"\nReplaying at {playback_speed}x speed...")
+        print("Press ESC or Q to quit\n")
 
-    # Final stats
-    print("\n" + "=" * 60)
-    print("Simulation Complete")
-    print("=" * 60)
-    print(f"Total Steps: {step}")
-    print(f"Final Distance: {distance:.2f}m")
-    print(f"Result: {'HIT' if hit else ('OUT OF FUEL' if out_of_fuel else ('OUT OF BOUNDS' if out_of_bounds else 'TIME OUT'))}")
-    print(f"Fuel Remaining: {missile.fuel_remaining*100:.1f}%")
-    print(f"PID Gains: Kp={missile.pid.kp:.3f}, Ki={missile.pid.ki:.3f}, Kd={missile.pid.kd:.3f}")
-    print("=" * 60)
+        renderer = PygameRenderer(map_size=map_size, window_size=(1200, 1000), fps=60)
+        replay = ReplaySimulation(history, renderer)
+        replay.replay(playback_speed=playback_speed, render_fps=60)
 
-    # Keep window open until user closes
-    print("\nClose window or press ESC to exit...")
-    while renderer.is_running():
-        renderer.render_frame(
-            missile_trajectory=missile.trajectory,
-            target_trajectory=target.trajectory,
-            missile_heading=missile.heading,
-            target_heading=target.heading,
-            hit_radius=hit_radius,
-            step=step,
-            distance=distance,
-            pid_gains=pid_gains,
-            fuel=missile.fuel_remaining,
-            mode="Basic PID (Fixed)",
-            title=f"Final State - {('HIT!' if hit else 'MISS')}"
-        )
+        print("\n" + "=" * 70)
+        print("Simulation Results")
+        print("=" * 70)
+        print(f"Result: {'HIT' if history.hit else 'MISS'}")
+        print(f"Final Distance: {history.final_distance:.2f}m")
+        print(f"Physics Steps: {history.total_steps:,}")
+        print(f"Simulation Time: {history.total_time:.2f}s")
+        print("=" * 70)
 
-    renderer.close()
+        renderer.close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Basic PID Missile Demo')
+    parser = argparse.ArgumentParser(description='Basic PID Missile Demo - Hybrid Simulation')
     parser.add_argument('--target', type=str, default='circular',
                        choices=['straight', 'circular', 'zigzag', 'evasive'],
                        help='Target maneuver type')
+    parser.add_argument('--mode', type=str, default='realtime',
+                       choices=['fast', 'realtime', 'replay'],
+                       help='Simulation mode: fast (no render), realtime (smooth 60fps), replay')
     parser.add_argument('--kp', type=float, default=None,
                        help='PID Kp parameter (default from config)')
     parser.add_argument('--ki', type=float, default=None,
@@ -199,8 +217,10 @@ if __name__ == "__main__":
                        help='PID Kd parameter (default from config)')
     parser.add_argument('--use_optimal', action='store_true',
                        help='Use optimal PID parameters from config')
-    parser.add_argument('--max_steps', type=int, default=500,
+    parser.add_argument('--max_steps', type=int, default=50000,
                        help='Maximum simulation steps')
+    parser.add_argument('--playback_speed', type=float, default=1.0,
+                       help='Playback speed for replay mode (e.g., 0.5 = slow-mo, 2.0 = fast)')
 
     args = parser.parse_args()
 
@@ -222,5 +242,7 @@ if __name__ == "__main__":
     run_basic_pid_demo(
         target_maneuver=args.target,
         pid_config=pid_config,
-        max_steps=args.max_steps
+        max_steps=args.max_steps,
+        mode=args.mode,
+        playback_speed=args.playback_speed
     )
