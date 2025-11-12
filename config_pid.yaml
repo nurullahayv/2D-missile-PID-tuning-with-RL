@@ -1,0 +1,40 @@
+# PID Configuration for Missile Guidance
+
+# Default PID parameters for basic (non-RL) guidance
+default_pid:
+  kp: 2.0
+  ki: 0.1
+  kd: 0.5
+
+# Optimal PID parameters (found through experimentation)
+optimal_pid:
+  kp: 3.2
+  ki: 0.15
+  kd: 0.8
+
+# PID parameter ranges for RL tuning
+pid_ranges:
+  kp_min: 0.1
+  kp_max: 10.0
+  ki_min: 0.0
+  ki_max: 5.0
+  kd_min: 0.0
+  kd_max: 5.0
+
+# Missile dynamics
+missile:
+  max_speed: 300.0  # m/s
+  max_acceleration: 100.0  # m/s^2
+  initial_speed: 250.0  # m/s
+  fuel_consumption_rate: 0.01  # per second
+
+# Target dynamics
+target:
+  speed: 150.0  # m/s
+
+# Simulation
+simulation:
+  dt: 0.1  # time step (seconds)
+  max_steps: 500
+  map_size: 10000.0  # meters
+  hit_radius: 50.0  # meters
