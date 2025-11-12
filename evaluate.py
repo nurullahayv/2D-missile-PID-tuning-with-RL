@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from envs.missile_pid_env import MissilePIDEnv
 from config import get_default_config
-from warsim.visualization.neon_renderer import NeonRenderer
+from warsim.visualization.pygame_renderer import PygameRenderer
 
 
 def evaluate_model(model_path: str,
@@ -81,9 +81,11 @@ def evaluate_model(model_path: str,
     # Initialize renderer if rendering is enabled
     renderer = None
     if render:
-        renderer = NeonRenderer(map_size=config['map_size'], dpi=100)
-        print("Live rendering enabled - displaying neon visualization")
-        import time
+        renderer = PygameRenderer(map_size=config['map_size'],
+                                  window_size=(1200, 1000),
+                                  fps=60)
+        print("Live rendering enabled - Pygame real-time visualization")
+        print("Press ESC or Q to skip to next episode\n")
 
     for episode in range(n_episodes):
         obs, info = env.reset()
@@ -107,15 +109,15 @@ def evaluate_model(model_path: str,
             pid_history['ki'].append(info['pid_gains']['ki'])
             pid_history['kd'].append(info['pid_gains']['kd'])
 
-            # Render with neon visualization
-            if render and renderer and episode_length % 2 == 0:
+            # Render with pygame real-time visualization
+            if render and renderer:
                 # Calculate distance
                 missile_pos = info['missile_position']
                 target_pos = info['target_position']
                 distance = np.sqrt((target_pos[0] - missile_pos[0])**2 +
                                  (target_pos[1] - missile_pos[1])**2)
 
-                renderer.render_frame(
+                success = renderer.render_frame(
                     missile_trajectory=env.missile.trajectory,
                     target_trajectory=env.target.trajectory,
                     missile_heading=env.missile.heading,
@@ -125,10 +127,13 @@ def evaluate_model(model_path: str,
                     distance=distance,
                     pid_gains=info['pid_gains'],
                     fuel=info['fuel'],
-                    title=f"Evaluation Episode {episode + 1} - {target_maneuver.capitalize()} Target"
+                    mode="RL Adaptive PID",
+                    title=f"RL Evaluation - Episode {episode + 1}/{n_episodes} - {target_maneuver.capitalize()} Target"
                 )
-                renderer.show()
-                time.sleep(0.01)  # Small delay for smooth rendering
+
+                # If user closed window or pressed ESC, skip rendering for rest
+                if not success:
+                    renderer = None
 
         # Record metrics
         episode_rewards.append(episode_reward)
@@ -177,39 +182,9 @@ def evaluate_model(model_path: str,
 
 
 def plot_trajectory(env: MissilePIDEnv, episode: int, output_dir: str):
-    """Plot missile and target trajectories with neon style"""
-    # Use neon renderer for consistent visualization
-    renderer = NeonRenderer(map_size=env.map_size, dpi=150)
-
-    # Get final state
-    missile_pos = env.missile.position
-    target_pos = env.target.position
-    distance = np.sqrt((target_pos[0] - missile_pos[0])**2 +
-                      (target_pos[1] - missile_pos[1])**2)
-
-    renderer.render_frame(
-        missile_trajectory=env.missile.trajectory,
-        target_trajectory=env.target.trajectory,
-        missile_heading=env.missile.heading,
-        target_heading=env.target.heading,
-        hit_radius=env.hit_radius,
-        step=len(env.missile.trajectory),
-        distance=distance,
-        pid_gains={
-            'kp': env.missile.pid.kp,
-            'ki': env.missile.pid.ki,
-            'kd': env.missile.pid.kd
-        },
-        fuel=env.missile.fuel_remaining,
-        title=f"Episode {episode + 1} - Final Trajectory"
-    )
-
-    # Save
-    renderer.save_frame(os.path.join(output_dir, f'trajectory_episode_{episode + 1}.png'))
-    renderer.close()
-
-    # Also create classic plot for comparison
-    fig, ax = plt.subplots(figsize=(10, 10))
+    """Plot missile and target trajectories (static plot for summary)"""
+    fig, ax = plt.subplots(figsize=(10, 10), facecolor='#0a0e27')
+    ax.set_facecolor('#0a0e27')
 
     # Plot missile trajectory
     missile_traj = np.array(env.missile.trajectory)
