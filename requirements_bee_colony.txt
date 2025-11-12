@@ -1,0 +1,16 @@
+# Requirements for Bee Colony Honeycomb Construction Simulation
+
+# Core dependencies
+numpy>=1.21.0
+torch>=1.12.0
+gymnasium>=0.28.0
+
+# Reinforcement Learning
+ray[rllib]>=2.7.0
+
+# Visualization
+matplotlib>=3.5.0
+
+# Utilities
+tqdm>=4.65.0
+tensorboard>=2.12.0
