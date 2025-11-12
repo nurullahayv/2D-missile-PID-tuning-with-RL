@@ -122,15 +122,7 @@ def main():
         policy_class=None,  # Use default
         observation_space=None,  # Auto-inferred
         action_space=None,  # Auto-inferred
-        config={
-            "model": {
-                "custom_model": "bee_lowlevel_model",
-                "custom_model_config": {
-                    "window_size": args.window_size,
-                    "num_bees": args.num_bees,
-                }
-            }
-        }
+        config={}
     )
 
     # Create policies dict (all bees share the same policy)
@@ -161,13 +153,6 @@ def main():
             vf_clip_param=10.0,
             entropy_coeff=0.01,
             use_gae=True,
-            model={
-                "custom_model": "bee_lowlevel_model",
-                "custom_model_config": {
-                    "window_size": args.window_size,
-                    "num_bees": args.num_bees,
-                }
-            }
         )
         .multi_agent(
             policies=policies,
@@ -186,6 +171,15 @@ def main():
             log_level="WARN"
         )
     )
+
+    # Set model config
+    ppo_config.model = {
+        "custom_model": "bee_lowlevel_model",
+        "custom_model_config": {
+            "window_size": args.window_size,
+            "num_bees": args.num_bees,
+        }
+    }
 
     # Build algorithm
     algo = ppo_config.build()
