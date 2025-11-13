@@ -110,7 +110,7 @@ class FixedPIDEnv(gym.Env):
 
         # Update simulation
         self.missile.update(self.target.x, self.target.y, self.dt)
-        self.target.update(self.dt)
+        self.target.update(self.dt, missile_pos=np.array([self.missile.x, self.missile.y]))
         self.steps += 1
 
         # Track trajectory
@@ -174,8 +174,9 @@ class FixedPIDEnv(gym.Env):
         # Target state
         t_x = self.target.x / self.map_size
         t_y = self.target.y / self.map_size
-        t_vx = self.target.vx / self.target.speed
-        t_vy = self.target.vy / self.target.speed
+        target_vel = self.target.velocity  # Get velocity vector
+        t_vx = target_vel[0] / self.target.speed
+        t_vy = target_vel[1] / self.target.speed
 
         # Relative info
         dx = self.target.x - self.missile.x
