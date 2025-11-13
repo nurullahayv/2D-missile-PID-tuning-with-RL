@@ -19,14 +19,15 @@
 
 ```
 src/
-  missile.py      # PID kontrollü füze
-  target.py       # Hareketli hedef (4 manevra tipi)
-  environment.py  # Gym environment
-  renderer.py     # Pygame görselleştirme
-train.py          # RL training
-evaluate.py       # Model evaluation
-demo.py           # Basit demo (RL yok)
-config.yaml       # Konfigürasyon
+  missile.py           # PID kontrollü füze
+  target.py            # Hareketli hedef (4 manevra tipi)
+  environment.py       # Gym environment
+  renderer.py          # Pygame görselleştirme
+train.py               # RL training (local)
+evaluate.py            # Model evaluation
+demo.py                # Basit demo (RL yok)
+kaggle_training.ipynb  # Kaggle GPU training notebook 🎮
+config.yaml            # Konfigürasyon
 ```
 
 ## 🚀 Kurulum
@@ -36,6 +37,22 @@ pip install -r requirements.txt
 ```
 
 ## 💻 Kullanım
+
+### 0. 🎮 Kaggle GPU Training (Önerilen!)
+
+**En hızlı yol: Kaggle'da ücretsiz GPU ile eğit!**
+
+1. Kaggle'a git: https://www.kaggle.com
+2. `kaggle_training.ipynb` dosyasını upload et
+3. Settings → Accelerator → **GPU T4** seç
+4. "Run All" - 30-45 dakikada model hazır!
+5. Trained modeli indir
+
+**Avantajlar:**
+- ✅ Ücretsiz GPU (T4/P100)
+- ✅ Kurulum yok, direkt çalışır
+- ✅ 30-45 dakikada eğitim tamamlanır
+- ✅ Trained model indirilebilir
 
 ### 1. Demo (RL olmadan, sabit PID)
 
