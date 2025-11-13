@@ -109,8 +109,8 @@ class FixedPIDEnv(gym.Env):
         # On subsequent steps: action is IGNORED (PID stays fixed)
 
         # Update simulation
-        self.missile.update(self.target.x, self.target.y, self.dt)
-        self.target.update(self.dt, missile_pos=np.array([self.missile.x, self.missile.y]))
+        self.missile.update(self.target.position, self.dt)
+        self.target.update(self.dt, missile_pos=self.missile.position)
         self.steps += 1
 
         # Track trajectory
