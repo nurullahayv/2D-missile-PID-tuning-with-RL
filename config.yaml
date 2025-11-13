@@ -1,0 +1,46 @@
+# Simulation Configuration
+
+# Environment
+map_size: 10000.0  # meters
+hit_radius: 50.0   # meters
+max_steps: 500
+dt: 0.01           # seconds (100 Hz physics)
+
+# Missile
+missile:
+  max_speed: 300.0       # m/s
+  max_acceleration: 100.0  # m/s^2
+  initial_speed: 250.0   # m/s
+
+# Target
+target:
+  speed: 150.0  # m/s
+  maneuvers:
+    - straight
+    - circular
+    - zigzag
+    - evasive
+
+# PID Default
+pid_default:
+  kp: 2.0
+  ki: 0.1
+  kd: 0.5
+
+# PID Ranges (for RL)
+pid_ranges:
+  kp: [0.1, 10.0]
+  ki: [0.0, 5.0]
+  kd: [0.0, 5.0]
+
+# Training
+training:
+  algorithms: [PPO, SAC, TD3]
+  n_envs: 4
+  total_timesteps: 1_000_000
+  save_freq: 50_000
+
+# Rendering
+render:
+  window_size: [1000, 800]
+  fps: 60

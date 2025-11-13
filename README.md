@@ -1,208 +1,196 @@
 # 2D Missile PID Tuning with Reinforcement Learning
 
-**2D Savaş Ortamında Manevra Yapan Hedeflere Karşı Füze Otopilotu PID Parametrelerinin Pekiştirmeli Öğrenme ile Adaptif Ayarlanması**
+**Temiz, minimal implementation** - 2D füze güdüm sistemi, RL ile adaptif PID parametre ayarlama.
 
-Bu proje, 2D simülasyon ortamında manevra yapan hedeflere karşı füze güdüm sistemi PID kontrolcü parametrelerinin (Kp, Ki, Kd) pekiştirmeli öğrenme (RL) ile otomatik olarak ayarlanmasını sağlar.
+## 🎯 Amaç
 
-![Missile Guidance](img/missile_guidance.png)
+- **Görev**: 2D füze (PID kontrollü) → hareketli hedefi takip et
+- **RL Hedefi**: PID parametrelerini (Kp, Ki, Kd) adaptif olarak ayarla
+- **Test**: Farklı RL algoritmalarını (PPO, SAC, TD3) karşılaştır
 
-## Özellikler
+## 📦 Stack
 
-- **PID Kontrollü Füze**: Gerçekçi 2D füze dinamiği ve PID kontrolcü
-- **Hareketli Hedefler**: Farklı manevra tipleri (düz, dairesel, zigzag, kaçış)
-- **RL Eğitimi**: PPO, SAC, TD3 algoritmaları ile eğitim desteği
-- **GPU Desteği**: Kaggle notebook ile hızlı eğitim
-- **Görselleştirme**: Detaylı trajectory ve performans grafikleri
-- **Modüler Yapı**: Kolay genişletilebilir ve özelleştirilebilir
+- **Gymnasium**: RL environment
+- **Pygame**: Görselleştirme
+- **PyTorch**: Neural network backend
+- **Stable-Baselines3**: RL algorithms (PPO, SAC, TD3)
 
-## Kurulum
+## 🏗️ Yapı
 
-### Gereksinimler
+```
+src/
+  missile.py      # PID kontrollü füze
+  target.py       # Hareketli hedef (4 manevra tipi)
+  environment.py  # Gym environment
+  renderer.py     # Pygame görselleştirme
+train.py          # RL training
+evaluate.py       # Model evaluation
+demo.py           # Basit demo (RL yok)
+config.yaml       # Konfigürasyon
+```
 
-- Python 3.8+
-- CUDA (opsiyonel, GPU eğitimi için)
-
-### Adımlar
+## 🚀 Kurulum
 
 ```bash
-# Repoyu klonla
-git clone https://github.com/YOUR_USERNAME/2D-missile-PID-tuning-with-RL.git
-cd 2D-missile-PID-tuning-with-RL
-
-# Gerekli paketleri yükle
 pip install -r requirements.txt
 ```
 
-## Kullanım
+## 💻 Kullanım
 
-### 1. Temel Eğitim
-
-En basit şekilde eğitim başlatmak için:
+### 1. Demo (RL olmadan, sabit PID)
 
 ```bash
-python train.py
+# Dairesel manevra yapan hedef
+python demo.py --maneuver circular --kp 2.0 --ki 0.1 --kd 0.5
+
+# Kaçan hedef
+python demo.py --maneuver evasive --kp 3.0 --ki 0.15 --kd 0.8
+
+# Düz giden hedef (kolay)
+python demo.py --maneuver straight --kp 1.5 --ki 0.05 --kd 0.3
+
+# Zigzag yapan hedef
+python demo.py --maneuver zigzag --kp 2.5 --ki 0.12 --kd 0.6
 ```
 
-### 2. Özel Parametrelerle Eğitim
-
-Farklı hedef manevraları ve algoritmalar ile eğitim:
+### 2. RL Training
 
 ```bash
-# Dairesel hareket eden hedefe karşı PPO ile eğitim
-python train.py --target_maneuver circular --algorithm PPO --total_timesteps 1000000
+# PPO ile eğit (dairesel hedef)
+python train.py --algorithm PPO --maneuver circular --timesteps 1000000
 
-# Kaçış manevrası yapan hedefe karşı SAC ile eğitim
-python train.py --target_maneuver evasive --algorithm SAC --total_timesteps 2000000
+# SAC ile eğit (kaçan hedef)
+python train.py --algorithm SAC --maneuver evasive --timesteps 1000000 --n_envs 8
 
-# GPU kullanarak eğitim
-python train.py --device cuda --total_timesteps 2000000
+# TD3 ile eğit (zigzag hedef)
+python train.py --algorithm TD3 --maneuver zigzag --timesteps 500000
 ```
 
-### 3. Değerlendirme
+**Output**: `models/` klasörüne kaydedilir
 
-Eğitilmiş bir modeli test etmek için:
+### 3. Trained Model Evaluation
 
 ```bash
-python evaluate.py --model_path ./models/final_model.zip --n_episodes 10 --target_maneuver circular
+# Görselleştirme ile
+python evaluate.py models/PPO_circular_*/best_model/best_model.zip --render --n_episodes 10
+
+# Sadece metrikler
+python evaluate.py models/SAC_evasive_*/final_model.zip --n_episodes 20
 ```
 
-### 4. Kaggle'da GPU ile Eğitim
+## 📊 Sistem Detayları
 
-1. `kaggle_training.ipynb` dosyasını Kaggle'a yükleyin
-2. Settings'den GPU'yu etkinleştirin
-3. Internet erişimini aktifleştirin
-4. Notebook'u çalıştırın!
+### Füze
+- **State**: Pozisyon (x, y), Hız (vx, vy)
+- **Kontrolör**: PID (heading kontrolü)
+- **Kısıtlar**: max_speed=300m/s, max_accel=100m/s²
+- **Fizik**: 100 Hz güncelleme (dt=0.01s)
 
-## Proje Yapısı
+### Hedef
+- **Hız**: 150 m/s (füzeden yavaş)
+- **Manevralar**:
+  - `straight`: Manevra yok
+  - `circular`: Sabit dönüş hızı
+  - `zigzag`: Periyodik yön değişimleri
+  - `evasive`: Füzeye tepkisel kaçış
 
+### RL Environment
+
+**Observation (14D)**:
+- Füze: pozisyon, hız, PID gains, fuel
+- Hedef: pozisyon, hız
+- Relative: mesafe, açı hatası
+
+**Action (3D continuous)**:
+- `[Δkp, Δki, Δkd]` ∈ [-1, 1]³
+
+**Reward**:
+- -distance (normalize edilmiş)
+- +hedefe yaklaşma bonusu
+- +100 (vurdu)
+- -50 (ıskaladı)
+
+### Desteklenen Algoritmalar
+- **PPO**: On-policy, stabil, iyi baseline
+- **SAC**: Off-policy, sample-efficient
+- **TD3**: Off-policy, deterministic, robust
+
+## 📈 Beklenen Sonuçlar
+
+| Method    | Maneuver  | Hit Rate | Avg Steps |
+|-----------|-----------|----------|-----------|
+| Sabit PID | Straight  | ~90%     | 120       |
+| Sabit PID | Circular  | ~70%     | 180       |
+| Sabit PID | Evasive   | ~40%     | 250       |
+| RL (PPO)  | Circular  | ~85%     | 150       |
+| RL (SAC)  | Evasive   | ~65%     | 200       |
+
+RL ajanları zor manevralarda **+10-20% iyileştirme** göstermeli.
+
+## ⚙️ Konfigürasyon
+
+`config.yaml` dosyasını düzenle:
+- Harita boyutu, vuruş yarıçapı
+- Füze/hedef hızları
+- PID default değerleri ve aralıkları
+- Training hyperparameters
+
+## 🎨 Görselleştirme
+
+Pygame renderer gösterir:
+- Füze (cyan) ve hedef (red)
+- Trajectory'ler (son 100 nokta)
+- Vuruş yarıçapı çemberi
+- Real-time info: mesafe, PID gains, fuel, hız
+
+Kontroller:
+- **ESC** veya **Q**: Çıkış
+
+## 🔧 İleri Kullanım
+
+### Paralel Training
+
+```bash
+# Daha fazla paralel environment
+python train.py --algorithm PPO --n_envs 8 --timesteps 2000000
 ```
-2D-missile-PID-tuning-with-RL/
-├── envs/
-│   ├── __init__.py
-│   ├── env_base.py              # Base environment (eski projeden)
-│   └── missile_pid_env.py       # Missile PID environment
-├── warsim/
-│   ├── simulator/
-│   │   ├── __init__.py
-│   │   ├── missile.py           # Missile dynamics + PID
-│   │   ├── target.py            # Moving target
-│   │   └── cmano_simulator.py   # Base simulator (eski projeden)
-│   ├── utils/
-│   │   ├── angles.py
-│   │   ├── geodesics.py
-│   │   └── map_limits.py
-│   └── scenplotter/
-│       └── scenario_plotter.py  # Visualization utilities
-├── config.py                     # Configuration
-├── train.py                      # Training script
-├── evaluate.py                   # Evaluation script
-├── kaggle_training.ipynb        # Kaggle GPU training notebook
-├── requirements.txt             # Dependencies
-└── README.md
+
+### Hyperparameter Tuning
+
+`train.py` içinde değiştir:
+- Learning rate
+- Batch size
+- Network architecture
+
+### Custom Maneuvers
+
+`src/target.py` içinde yeni manevra ekle:
+
+```python
+elif self.maneuver == 'custom':
+    # Kendi manevralarınız
+    pass
 ```
 
-## Algoritma Detayları
+## 🐛 Sorun Giderme
 
-### PID Controller
+**Yavaş rendering**: `demo.py` veya `evaluate.py` çalıştırırken `--render` kullanma
 
-Füze güdüm sistemi PID kontrolcü kullanır:
+**Training converge olmuyor**:
+- Timesteps artır
+- `src/environment.py` içinde reward function ayarla
+- Farklı algoritma dene (SAC genelde daha sample-efficient)
 
-```
-u(t) = Kp * e(t) + Ki * ∫e(t)dt + Kd * de(t)/dt
-```
+**Import errors**: Proje root'undan çalıştırdığınızdan ve `requirements.txt` yüklendiğinden emin olun
 
-- **Kp (Proportional)**: Anlık hataya göre düzeltme
-- **Ki (Integral)**: Birikmiş hatayı düzeltme
-- **Kd (Derivative)**: Hata değişim hızına göre düzeltme
+## 📚 Kaynaklar
 
-### Reinforcement Learning
+1. **Control Systems**: Franklin et al., "Feedback Control of Dynamic Systems"
+2. **RL**: Sutton & Barto, "Reinforcement Learning: An Introduction"
+3. **PPO**: Schulman et al., "Proximal Policy Optimization Algorithms"
+4. **SAC**: Haarnoja et al., "Soft Actor-Critic"
+5. **TD3**: Fujimoto et al., "Addressing Function Approximation Error"
 
-RL ajanı, PID parametrelerini dinamik olarak ayarlar:
+---
 
-- **Observation Space (14D)**:
-  - Füze pozisyonu (x, y)
-  - Füze hızı (vx, vy)
-  - Füze yönü
-  - Hedef pozisyonu (x, y)
-  - Hedef hızı (vx, vy)
-  - Hedef yönü
-  - Göreceli mesafe
-  - Göreceli açı
-  - Mevcut PID parametreleri (Kp, Ki, Kd)
-  - Kalan yakıt
-
-- **Action Space (3D)**:
-  - Δ Kp: Kp parametresindeki değişim
-  - Δ Ki: Ki parametresindeki değişim
-  - Δ Kd: Kd parametresindeki değişim
-
-- **Reward Function**:
-  - Hedefe yaklaşma ödülü
-  - Hedefe isabet ödülü (+1000)
-  - Isabet edememe cezası (-500)
-  - Aşırı PID değişimi cezası
-
-## Hedef Manevra Tipleri
-
-1. **Straight**: Düz çizgide hareket
-2. **Circular**: Dairesel hareket
-3. **Zigzag**: Zigzag hareketi
-4. **Evasive**: Kaçış manevrası (füzeden uzaklaşma)
-
-## Sonuçlar
-
-Eğitim sonuçları `logs/` ve `models/` klasörlerinde saklanır:
-
-- **TensorBoard**: `tensorboard --logdir logs/`
-- **Models**: `models/` klasöründe checkpoint'ler
-- **Evaluation**: `evaluation_results/` klasöründe grafikler
-
-## Örnek Sonuçlar
-
-### Straight Target
-- Hit Success Rate: ~95%
-- Average Steps: ~200
-
-### Circular Target
-- Hit Success Rate: ~85%
-- Average Steps: ~250
-
-### Evasive Target
-- Hit Success Rate: ~70%
-- Average Steps: ~300
-
-## Gelecek Geliştirmeler
-
-- [ ] Hierarchical RL (HRL) entegrasyonu
-- [ ] Multi-agent scenarios (çoklu füze)
-- [ ] 3D simülasyon ortamı
-- [ ] Gerçek füze parametreleri ile validasyon
-- [ ] Daha karmaşık hedef manevralar
-- [ ] Gürültü ve belirsizlik modelleri
-
-## Katkıda Bulunma
-
-1. Fork edin
-2. Feature branch oluşturun (`git checkout -b feature/amazing-feature`)
-3. Değişikliklerinizi commit edin (`git commit -m 'Add amazing feature'`)
-4. Branch'inizi push edin (`git push origin feature/amazing-feature`)
-5. Pull Request açın
-
-## Lisans
-
-Bu proje MIT lisansı altında lisanslanmıştır.
-
-## İletişim
-
-Sorularınız için issue açabilirsiniz.
-
-## Referanslar
-
-- [Stable-Baselines3 Documentation](https://stable-baselines3.readthedocs.io/)
-- [Gymnasium Documentation](https://gymnasium.farama.org/)
-- PID Control Theory
-- Missile Guidance Systems
-
-## Teşekkürler
-
-Bu proje, [HHMARL 2D](https://github.com/YOUR_REPO) projesinden esinlenerek ve bazı altyapı komponentleri kullanılarak geliştirilmiştir.
+**Akademik kontrol sistemleri dökümantasyonu için**: `CONTROL_SYSTEM_ARCHITECTURE.md`
