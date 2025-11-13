@@ -54,8 +54,8 @@ class PygameRenderer:
         self.font_medium = pygame.font.Font(None, 24)
         self.font_small = pygame.font.Font(None, 20)
 
-        # Trail history for gradient effect
-        self.max_trail_length = 200
+        # Trail history for gradient effect (optimized)
+        self.max_trail_length = 100
 
         self.running = True
 
@@ -99,39 +99,36 @@ class PygameRenderer:
     def draw_gradient_trail(self,
                            trajectory: List[Tuple[float, float]],
                            color: Tuple[int, int, int],
-                           max_points: int = 200):
-        """Draw trail with gradient effect"""
+                           max_points: int = 100):
+        """Draw trail with optimized gradient effect (NO surface creation per segment)"""
         if len(trajectory) < 2:
             return
 
-        # Limit trail length for performance
+        # Limit trail length for performance (reduced from 200 to 100)
         start_idx = max(0, len(trajectory) - max_points)
         trail = trajectory[start_idx:]
+
+        # Pre-create ONE surface for the entire trail (massive optimization!)
+        trail_surface = pygame.Surface(self.window_size, pygame.SRCALPHA)
 
         # Draw trail with fading effect
         n_points = len(trail)
         for i in range(n_points - 1):
-            alpha = int(255 * (i + 1) / n_points)  # Fade from 0 to 255
-
-            # Create color with alpha
-            fade_color = (*color, alpha)
+            # Calculate alpha (fade effect)
+            alpha = int(255 * (i + 1) / n_points)
 
             x1, y1 = self.world_to_screen(trail[i][0], trail[i][1])
             x2, y2 = self.world_to_screen(trail[i + 1][0], trail[i + 1][1])
 
-            # Draw line with varying thickness for glow effect
+            # Draw with varying thickness for depth
             thickness = max(1, int(3 * (i + 1) / n_points))
 
-            # Create glow by drawing multiple lines
-            for glow in range(3, 0, -1):
-                glow_alpha = alpha // (4 - glow)
-                glow_color = (*color, min(255, glow_alpha))
+            # Single glow layer instead of 3 (3x performance improvement)
+            glow_color = (*color, alpha)
+            pygame.draw.line(trail_surface, glow_color, (x1, y1), (x2, y2), thickness)
 
-                # Create surface for alpha blending
-                surf = pygame.Surface(self.window_size, pygame.SRCALPHA)
-                pygame.draw.line(surf, glow_color, (x1, y1), (x2, y2),
-                               thickness * glow)
-                self.screen.blit(surf, (0, 0))
+        # Blit the entire trail surface ONCE (instead of 300 times!)
+        self.screen.blit(trail_surface, (0, 0))
 
     def draw_entity(self,
                    x: float,
@@ -140,17 +137,21 @@ class PygameRenderer:
                    color: Tuple[int, int, int],
                    label: str,
                    size: int = 15):
-        """Draw missile or target with glow effect"""
+        """Draw missile or target with optimized glow effect"""
         screen_x, screen_y = self.world_to_screen(x, y)
 
-        # Draw glow layers
+        # Optimized: Create ONE surface for all glow layers
+        max_glow_size = size * 3
+        glow_surf = pygame.Surface((max_glow_size * 2, max_glow_size * 2), pygame.SRCALPHA)
+
+        # Draw glow layers on the same surface
         for glow_size in [size * 3, size * 2, size]:
             alpha = 80 if glow_size == size * 3 else (160 if glow_size == size * 2 else 255)
-            glow_surf = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
             pygame.draw.circle(glow_surf, (*color, alpha),
-                             (glow_size, glow_size), glow_size)
-            self.screen.blit(glow_surf,
-                           (screen_x - glow_size, screen_y - glow_size))
+                             (max_glow_size, max_glow_size), glow_size)
+
+        # Blit once
+        self.screen.blit(glow_surf, (screen_x - max_glow_size, screen_y - max_glow_size))
 
         # Draw direction arrow
         arrow_length = 30
@@ -177,17 +178,21 @@ class PygameRenderer:
         self.screen.blit(text, (screen_x - text.get_width() // 2, screen_y - 30))
 
     def draw_hit_radius(self, x: float, y: float, radius: float):
-        """Draw hit radius circle"""
+        """Draw hit radius circle with optimized rendering"""
         screen_x, screen_y = self.world_to_screen(x, y)
         screen_radius = int((radius / self.map_size) * (self.window_size[0] - 100))
 
-        # Draw multiple circles for glow effect
+        # Optimized: Create ONE surface for all glow circles
+        circle_surf = pygame.Surface(self.window_size, pygame.SRCALPHA)
+
+        # Draw multiple circles for glow effect on the same surface
         for i in range(3):
             alpha = 255 - i * 60
-            circle_surf = pygame.Surface(self.window_size, pygame.SRCALPHA)
             pygame.draw.circle(circle_surf, (*self.colors['hit_radius'], alpha),
                              (screen_x, screen_y), screen_radius + i * 2, 2)
-            self.screen.blit(circle_surf, (0, 0))
+
+        # Blit once
+        self.screen.blit(circle_surf, (0, 0))
 
     def draw_info_panel(self,
                        step: int,
