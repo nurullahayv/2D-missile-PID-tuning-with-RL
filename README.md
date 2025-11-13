@@ -21,9 +21,11 @@
 src/
   missile.py           # PID kontrollü füze
   target.py            # Hareketli hedef (4 manevra tipi)
-  environment.py       # Gym environment
+  environment.py       # Gym environment (adaptif PID)
+  fixed_pid_env.py     # Fixed PID environment (non-adaptif)
   renderer.py          # Pygame görselleştirme
-train.py               # RL training (local)
+train.py               # RL training (adaptif PID)
+train_fixed_pid.py     # RL training (fixed PID) ⭐
 evaluate.py            # Model evaluation
 demo.py                # Basit demo (RL yok)
 kaggle_training.ipynb  # Kaggle GPU training notebook 🎮
@@ -72,6 +74,44 @@ python demo.py --maneuver zigzag --kp 2.5 --ki 0.12 --kd 0.6
 
 ### 2. RL Training
 
+#### A) Fixed PID Training ⭐ (Önerilen)
+
+**En pratik yaklaşım**: RL ile optimal **sabit** PID parametrelerini bul
+
+```bash
+# SAC ile circular hedef için optimal PID bul
+python train_fixed_pid.py --algorithm SAC --maneuver circular --timesteps 500000
+
+# Evasive hedef için
+python train_fixed_pid.py --algorithm SAC --maneuver evasive --timesteps 500000
+
+# Farklı hızlarda test et
+python train_fixed_pid.py --algorithm SAC --maneuver circular \
+    --missile_speed 1000 --missile_accel 1000 --target_speed 1000 \
+    --timesteps 500000
+```
+
+**Çıktı**: Script otomatik olarak optimal PID parametrelerini bulur ve terminale yazdırır:
+```
+Optimal PID Parameters for 'circular' target:
+  Kp = 3.245 ± 0.123
+  Ki = 0.187 ± 0.042
+  Kd = 0.712 ± 0.089
+
+💡 Use these values in demo.py:
+   python demo.py --maneuver circular --kp 3.245 --ki 0.187 --kd 0.712
+```
+
+**Avantajlar**:
+- ✅ Gerçek füze sistemlerine benzer (sabit PID)
+- ✅ Yorumlanabilir sonuçlar (somut PID değerleri)
+- ✅ Daha hızlı öğrenme
+- ✅ Demo'da test edilebilir
+
+#### B) Adaptive PID Training (İleri seviye)
+
+**Dinamik sistem**: RL her adımda PID parametrelerini değiştirir
+
 ```bash
 # PPO ile eğit (dairesel hedef)
 python train.py --algorithm PPO --maneuver circular --timesteps 1000000
@@ -100,11 +140,15 @@ python evaluate.py models/SAC_evasive_*/final_model.zip --n_episodes 20
 ### Füze
 - **State**: Pozisyon (x, y), Hız (vx, vy)
 - **Kontrolör**: PID (heading kontrolü)
-- **Kısıtlar**: max_speed=300m/s, max_accel=100m/s²
+- **Kısıtlar**:
+  - Default: max_speed=300m/s, max_accel=100m/s²
+  - High-speed: max_speed=1000m/s, max_accel=1000m/s²
 - **Fizik**: 100 Hz güncelleme (dt=0.01s)
 
 ### Hedef
-- **Hız**: 150 m/s (füzeden yavaş)
+- **Hız**:
+  - Default: 150 m/s
+  - High-speed: 1000 m/s
 - **Manevralar**:
   - `straight`: Manevra yok
   - `circular`: Sabit dönüş hızı
@@ -113,19 +157,35 @@ python evaluate.py models/SAC_evasive_*/final_model.zip --n_episodes 20
 
 ### RL Environment
 
+#### Adaptive PID Environment (`environment.py`)
 **Observation (14D)**:
 - Füze: pozisyon, hız, PID gains, fuel
 - Hedef: pozisyon, hız
 - Relative: mesafe, açı hatası
 
 **Action (3D continuous)**:
-- `[Δkp, Δki, Δkd]` ∈ [-1, 1]³
+- `[Δkp, Δki, Δkd]` ∈ [-1, 1]³ (her adımda değişiklik)
 
 **Reward**:
 - -distance (normalize edilmiş)
 - +hedefe yaklaşma bonusu
 - +100 (vurdu)
 - -50 (ıskaladı)
+
+#### Fixed PID Environment (`fixed_pid_env.py`) ⭐
+**Observation (11D)**:
+- Füze: pozisyon, hız, fuel
+- Hedef: pozisyon, hız
+- Relative: mesafe, açı hatası
+- (PID gains gözlenmez çünkü sabit)
+
+**Action (3D continuous)**:
+- `[Kp, Ki, Kd]` - Direkt PID değerleri
+- Sadece episode başında bir kere seçilir, sonra sabit kalır
+
+**Reward**:
+- Episode sonunda toplam reward
+- Hit rate ve intercept süresi odaklı
 
 ### Desteklenen Algoritmalar
 - **PPO**: On-policy, stabil, iyi baseline
