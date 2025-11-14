@@ -159,6 +159,9 @@ class EpisodicFixedPIDEnv(gym.Env):
             # Heading error (missile heading vs desired heading)
             heading_error = angle_error  # Same as angle_error
 
+            # Get target velocity components
+            target_velocity = self.target.velocity
+
             # Record trajectory (12 features)
             self.trajectory.append([
                 self.missile.x,
@@ -167,8 +170,8 @@ class EpisodicFixedPIDEnv(gym.Env):
                 self.missile.vy,
                 self.target.x,
                 self.target.y,
-                self.target.vx,
-                self.target.vy,
+                target_velocity[0],  # target vx
+                target_velocity[1],  # target vy
                 distance,
                 angle_error,
                 closing_velocity,

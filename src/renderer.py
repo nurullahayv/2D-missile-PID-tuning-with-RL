@@ -97,7 +97,6 @@ class SimpleRenderer:
             f"Step: {step_count}",
             f"Distance: {distance:.1f}m",
             f"PID: Kp={missile.pid.kp:.2f} Ki={missile.pid.ki:.2f} Kd={missile.pid.kd:.2f}",
-            f"Fuel: {missile.fuel*100:.0f}%",
             f"Speed: {missile.speed:.1f}m/s"
         ]
 
