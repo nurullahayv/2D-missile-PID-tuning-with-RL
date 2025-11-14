@@ -1,35 +1,35 @@
 # 2D Missile PID Tuning with Reinforcement Learning
 
-**Temiz, minimal implementation** - 2D füze güdüm sistemi, RL ile adaptif PID parametre ayarlama.
+**Episode-level RL** - RL agent observes full simulation trajectory and learns optimal FIXED PID parameters.
 
 ## 🎯 Amaç
 
-- **Görev**: 2D füze (PID kontrollü) → hareketli hedefi takip et
-- **RL Hedefi**: PID parametrelerini (Kp, Ki, Kd) adaptif olarak ayarla
-- **Test**: Farklı RL algoritmalarını (PPO, SAC, TD3) karşılaştır
+- **Sistem**: 2D füze (PID kontrollü) → hareketli hedefi takip et
+- **RL Görevi**: Optimal sabit PID parametrelerini (Kp, Ki, Kd) bul
+- **Yaklaşım**: Episode-level RL - Tüm simülasyon trajectory'si observation
+- **Test**: RecurrentPPO (LSTM) ile trajectory'yi öğren
 
 ## 📦 Stack
 
 - **Gymnasium**: RL environment
 - **Pygame**: Görselleştirme
 - **PyTorch**: Neural network backend
-- **Stable-Baselines3**: RL algorithms (PPO, SAC, TD3)
+- **Stable-Baselines3**: RL algorithms (PPO, SAC)
+- **SB3-Contrib**: RecurrentPPO (LSTM policy)
 
 ## 🏗️ Yapı
 
 ```
 src/
-  missile.py           # PID kontrollü füze
-  target.py            # Hareketli hedef (4 manevra tipi)
-  environment.py       # Gym environment (adaptif PID)
-  fixed_pid_env.py     # Fixed PID environment (non-adaptif)
-  renderer.py          # Pygame görselleştirme
-train.py               # RL training (adaptif PID)
-train_fixed_pid.py     # RL training (fixed PID) ⭐
-evaluate.py            # Model evaluation
-demo.py                # Basit demo (RL yok)
-kaggle_training.ipynb  # Kaggle GPU training notebook 🎮
-config.yaml            # Konfigürasyon
+  missile.py                    # PID kontrollü füze
+  target.py                     # Hareketli hedef (4 manevra tipi)
+  episodic_fixed_pid_env.py    # Episode-level RL environment ⭐
+  renderer.py                   # Pygame görselleştirme
+train_fixed_pid.py              # RL training (RecurrentPPO) ⭐
+evaluate.py                     # Model evaluation
+demo.py                         # Basit demo (RL yok)
+kaggle_training_fixed_pid.ipynb # Kaggle GPU training notebook 🎮
+config.yaml                     # Konfigürasyon
 ```
 
 ## 🚀 Kurulum
@@ -38,23 +38,9 @@ config.yaml            # Konfigürasyon
 pip install -r requirements.txt
 ```
 
+**Not:** `sb3-contrib` gerekli (RecurrentPPO için)
+
 ## 💻 Kullanım
-
-### 0. 🎮 Kaggle GPU Training (Önerilen!)
-
-**En hızlı yol: Kaggle'da ücretsiz GPU ile eğit!**
-
-1. Kaggle'a git: https://www.kaggle.com
-2. `kaggle_training.ipynb` dosyasını upload et
-3. Settings → Accelerator → **GPU T4** seç
-4. "Run All" - 30-45 dakikada model hazır!
-5. Trained modeli indir
-
-**Avantajlar:**
-- ✅ Ücretsiz GPU (T4/P100)
-- ✅ Kurulum yok, direkt çalışır
-- ✅ 30-45 dakikada eğitim tamamlanır
-- ✅ Trained model indirilebilir
 
 ### 1. Demo (RL olmadan, sabit PID)
 
@@ -72,24 +58,28 @@ python demo.py --maneuver straight --kp 1.5 --ki 0.05 --kd 0.3
 python demo.py --maneuver zigzag --kp 2.5 --ki 0.12 --kd 0.6
 ```
 
-### 2. RL Training
-
-#### A) Fixed PID Training ⭐ (Önerilen)
+### 2. RL Training (Episode-level Fixed PID) ⭐
 
 **En pratik yaklaşım**: RL ile optimal **sabit** PID parametrelerini bul
 
 ```bash
-# SAC ile circular hedef için optimal PID bul
-python train_fixed_pid.py --algorithm SAC --maneuver circular --timesteps 500000
+# RecurrentPPO ile circular hedef için optimal PID bul
+python train_fixed_pid.py --algorithm RecurrentPPO --maneuver circular --timesteps 10000
 
 # Evasive hedef için
-python train_fixed_pid.py --algorithm SAC --maneuver evasive --timesteps 500000
+python train_fixed_pid.py --algorithm RecurrentPPO --maneuver evasive --timesteps 20000
 
-# Farklı hızlarda test et
-python train_fixed_pid.py --algorithm SAC --maneuver circular \
-    --missile_speed 1000 --missile_accel 1000 --target_speed 1000 \
-    --timesteps 500000
+# Standard PPO (LSTM olmadan)
+python train_fixed_pid.py --algorithm PPO --maneuver circular --timesteps 10000
+
+# SAC (LSTM olmadan, off-policy)
+python train_fixed_pid.py --algorithm SAC --maneuver circular --timesteps 50000
 ```
+
+**Önemli:**
+- 1 timestep = 1 episode (full 500-step simulation)
+- RecurrentPPO: LSTM ile trajectory'yi öğrenir
+- 10K timesteps = 10K episode = ~2-3 hours
 
 **Çıktı**: Script otomatik olarak optimal PID parametrelerini bulur ve terminale yazdırır:
 ```
@@ -105,34 +95,33 @@ Optimal PID Parameters for 'circular' target:
 **Avantajlar**:
 - ✅ Gerçek füze sistemlerine benzer (sabit PID)
 - ✅ Yorumlanabilir sonuçlar (somut PID değerleri)
-- ✅ Daha hızlı öğrenme
+- ✅ Trajectory observation (tüm simülasyon görülür)
 - ✅ Demo'da test edilebilir
 
-#### B) Adaptive PID Training (İleri seviye)
+### 3. Kaggle GPU Training (Önerilen!)
 
-**Dinamik sistem**: RL her adımda PID parametrelerini değiştirir
+**En hızlı yol: Kaggle'da ücretsiz GPU ile eğit!**
 
-```bash
-# PPO ile eğit (dairesel hedef)
-python train.py --algorithm PPO --maneuver circular --timesteps 1000000
+1. Kaggle'a git: https://www.kaggle.com
+2. `kaggle_training_fixed_pid.ipynb` dosyasını upload et
+3. Settings → Accelerator → **GPU T4** seç
+4. "Run All" - 1-2 saatte model hazır!
+5. Optimal PID değerleri notebook'ta gösterilir
 
-# SAC ile eğit (kaçan hedef)
-python train.py --algorithm SAC --maneuver evasive --timesteps 1000000 --n_envs 8
+**Avantajlar:**
+- ✅ Ücretsiz GPU (T4/P100)
+- ✅ Kurulum yok, direkt çalışır
+- ✅ 1-2 saatte eğitim tamamlanır
+- ✅ Optimal PID değerleri otomatik çıkar
 
-# TD3 ile eğit (zigzag hedef)
-python train.py --algorithm TD3 --maneuver zigzag --timesteps 500000
-```
-
-**Output**: `models/` klasörüne kaydedilir
-
-### 3. Trained Model Evaluation
+### 4. Trained Model Evaluation
 
 ```bash
 # Görselleştirme ile
-python evaluate.py models/PPO_circular_*/best_model/best_model.zip --render --n_episodes 10
+python evaluate.py models/recurrentppo_circular_*/best_model.zip --render --n_episodes 10
 
 # Sadece metrikler
-python evaluate.py models/SAC_evasive_*/final_model.zip --n_episodes 20
+python evaluate.py models/sac_evasive_*/final_model.zip --n_episodes 20
 ```
 
 ## 📊 Sistem Detayları
@@ -140,76 +129,70 @@ python evaluate.py models/SAC_evasive_*/final_model.zip --n_episodes 20
 ### Füze
 - **State**: Pozisyon (x, y), Hız (vx, vy)
 - **Kontrolör**: PID (heading kontrolü)
-- **Kısıtlar**:
-  - Default: max_speed=300m/s, max_accel=100m/s²
-  - High-speed: max_speed=1000m/s, max_accel=1000m/s²
+- **Kısıtlar**: max_speed=1000m/s, max_accel=1000m/s²
 - **Fizik**: 100 Hz güncelleme (dt=0.01s)
 
 ### Hedef
-- **Hız**:
-  - Default: 150 m/s
-  - High-speed: 1000 m/s
+- **Hız**: 1000 m/s
 - **Manevralar**:
   - `straight`: Manevra yok
   - `circular`: Sabit dönüş hızı
   - `zigzag`: Periyodik yön değişimleri
   - `evasive`: Füzeye tepkisel kaçış
 
-### RL Environment
+### Episode-level RL Environment ⭐
 
-#### Adaptive PID Environment (`environment.py`)
-**Observation (14D)**:
-- Füze: pozisyon, hız, PID gains, fuel
-- Hedef: pozisyon, hız
-- Relative: mesafe, açı hatası
+**Workflow:**
+1. RL agent selects [Kp, Ki, Kd] once
+2. Environment runs FULL simulation (500 steps)
+3. Trajectory is downsampled (every 10 steps → 50 samples)
+4. Observation = trajectory features (600D)
+5. Reward = episodic (hit, time, trajectory quality)
 
-**Action (3D continuous)**:
-- `[Δkp, Δki, Δkd]` ∈ [-1, 1]³ (her adımda değişiklik)
-
-**Reward**:
-- -distance (normalize edilmiş)
-- +hedefe yaklaşma bonusu
-- +100 (vurdu)
-- -50 (ıskaladı)
-
-#### Fixed PID Environment (`fixed_pid_env.py`) ⭐
-**Observation (11D)**:
-- Füze: pozisyon, hız, fuel
-- Hedef: pozisyon, hız
-- Relative: mesafe, açı hatası
-- (PID gains gözlenmez çünkü sabit)
+**Observation (600D)**:
+- Downsampled trajectory: 50 samples × 12 features
+- Features per sample: [m_x, m_y, m_vx, m_vy, t_x, t_y, t_vx, t_vy, distance, angle_error, closing_velocity, heading_error]
 
 **Action (3D continuous)**:
 - `[Kp, Ki, Kd]` - Direkt PID değerleri
-- Sadece episode başında bir kere seçilir, sonra sabit kalır
+- Kp ∈ [0.1, 10000], Ki ∈ [0.0, 50], Kd ∈ [0.0, 50]
+- Episode başında bir kere seçilir, sonra sabit kalır
 
-**Reward**:
-- Episode sonunda toplam reward
-- Hit rate ve intercept süresi odaklı
+**Reward (Episodic)**:
+```python
+reward = 0
+if hit:
+    reward += 100 + time_bonus
+else:
+    reward -= 50 + distance_penalty
+
+reward -= avg_distance_penalty
+reward -= trajectory_smoothness_penalty
+reward += closing_velocity_bonus
+```
 
 ### Desteklenen Algoritmalar
+- **RecurrentPPO**: LSTM policy, trajectory sequence öğrenir ⭐
 - **PPO**: On-policy, stabil, iyi baseline
-- **SAC**: Off-policy, sample-efficient
-- **TD3**: Off-policy, deterministic, robust
+- **SAC**: Off-policy, sample-efficient (ama LSTM yok)
 
 ## 📈 Beklenen Sonuçlar
 
-| Method    | Maneuver  | Hit Rate | Avg Steps |
-|-----------|-----------|----------|-----------|
-| Sabit PID | Straight  | ~90%     | 120       |
-| Sabit PID | Circular  | ~70%     | 180       |
-| Sabit PID | Evasive   | ~40%     | 250       |
-| RL (PPO)  | Circular  | ~85%     | 150       |
-| RL (SAC)  | Evasive   | ~65%     | 200       |
+| Algorithm      | Maneuver  | Hit Rate | Avg Time | Training Time |
+|----------------|-----------|----------|----------|---------------|
+| RecurrentPPO   | Circular  | ~80%     | 200      | 2-3 hours     |
+| RecurrentPPO   | Evasive   | ~60%     | 280      | 3-4 hours     |
+| PPO (no LSTM)  | Circular  | ~70%     | 220      | 2 hours       |
+| SAC (no LSTM)  | Circular  | ~75%     | 210      | 4-5 hours     |
 
-RL ajanları zor manevralarda **+10-20% iyileştirme** göstermeli.
+**RecurrentPPO önerilir:** Trajectory sequence'i LSTM ile öğrenir.
 
 ## ⚙️ Konfigürasyon
 
 `config.yaml` dosyasını düzenle:
 - Harita boyutu, vuruş yarıçapı
 - Füze/hedef hızları
-- PID default değerleri ve aralıkları
+- PID aralıkları (wide range: Kp up to 10000!)
 - Training hyperparameters
 
 ## 🎨 Görselleştirme
@@ -218,7 +201,7 @@ Pygame renderer gösterir:
 - Füze (cyan) ve hedef (red)
 - Trajectory'ler (son 100 nokta)
 - Vuruş yarıçapı çemberi
-- Real-time info: mesafe, PID gains, fuel, hız
+- Real-time info: mesafe, PID gains, hız
 
 Kontroller:
 - **ESC** veya **Q**: Çıkış
@@ -229,15 +212,16 @@ Kontroller:
 
 ```bash
 # Daha fazla paralel environment
-python train.py --algorithm PPO --n_envs 8 --timesteps 2000000
+python train_fixed_pid.py --algorithm RecurrentPPO --n_envs 8 --timesteps 20000
 ```
 
 ### Hyperparameter Tuning
 
-`train.py` içinde değiştir:
+`train_fixed_pid.py` içinde değiştir:
 - Learning rate
 - Batch size
 - Network architecture
+- LSTM hidden size
 
 ### Custom Maneuvers
 
@@ -251,14 +235,19 @@ elif self.maneuver == 'custom':
 
 ## 🐛 Sorun Giderme
 
-**Yavaş rendering**: `demo.py` veya `evaluate.py` çalıştırırken `--render` kullanma
+**Yavaş training**: Normal! 1 episode = 500 simulation step. RecurrentPPO LSTM overhead ekler.
+
+**LSTM memory error**: `lstm_hidden_size` küçült (256 → 128)
 
 **Training converge olmuyor**:
-- Timesteps artır
-- `src/environment.py` içinde reward function ayarla
-- Farklı algoritma dene (SAC genelde daha sample-efficient)
+- Timesteps artır (10K → 20K)
+- Reward function ayarla (`episodic_fixed_pid_env.py`)
+- Farklı algoritma dene (RecurrentPPO → PPO)
 
-**Import errors**: Proje root'undan çalıştırdığınızdan ve `requirements.txt` yüklendiğinden emin olun
+**Import errors**:
+```bash
+pip install sb3-contrib>=2.0.0
+```
 
 ## 📚 Kaynaklar
 
@@ -266,7 +255,26 @@ elif self.maneuver == 'custom':
 2. **RL**: Sutton & Barto, "Reinforcement Learning: An Introduction"
 3. **PPO**: Schulman et al., "Proximal Policy Optimization Algorithms"
 4. **SAC**: Haarnoja et al., "Soft Actor-Critic"
-5. **TD3**: Fujimoto et al., "Addressing Function Approximation Error"
+5. **LSTM**: Hochreiter & Schmidhuber, "Long Short-Term Memory"
+
+---
+
+## 🆚 Episode-level vs Step-level RL
+
+| Özellik | Episode-level (Bu Repo) | Step-level |
+|---------|-------------------------|------------|
+| **Observation** | Full trajectory (600D) | Current state (11D) |
+| **Action frequency** | Once per episode | Every step |
+| **Training samples** | 1 per episode | 500 per episode |
+| **Trajectory** | Explicit | Implicit (LSTM hidden) |
+| **Training speed** | Slower (1 sample) | Faster (500 samples) |
+| **Information** | Full trajectory | Current state only |
+| **Best for PID tuning** | ✅ Yes | Maybe |
+
+**Episode-level daha mantıklı çünkü:**
+- Tüm trajectory görülür (like real PID tuning!)
+- Reward episodic (hit, time, quality)
+- More interpretable
 
 ---
 

@@ -58,7 +58,6 @@ class Missile:
 
         # Status
         self.active = True
-        self.fuel = 1.0
 
     @property
     def position(self):
@@ -114,11 +113,6 @@ class Missile:
         self.x += self.vx * dt
         self.y += self.vy * dt
 
-        # Update fuel
-        self.fuel -= 0.01 * dt
-        if self.fuel <= 0:
-            self.active = False
-
         # Record trajectory
         self.trajectory.append((self.x, self.y))
 
@@ -129,7 +123,6 @@ class Missile:
         self.vx = vx
         self.vy = vy
         self.active = True
-        self.fuel = 1.0
         self.trajectory = [(x, y)]
         self.pid.reset()
 
