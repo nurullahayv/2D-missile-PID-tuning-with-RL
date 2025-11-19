@@ -279,3 +279,82 @@ pip install sb3-contrib>=2.0.0
 ---
 
 **Akademik kontrol sistemleri dökümantasyonu için**: `CONTROL_SYSTEM_ARCHITECTURE.md`
+
+## 🔬 Baseline Comparison: Ziegler-Nichols vs RL
+
+Makale için klasik PID tuning metodu (Ziegler-Nichols) ile RL yaklaşımını karşılaştırıyoruz.
+
+### Ziegler-Nichols Tuning
+
+Klasik PID tuning metodudur:
+
+1. **Ku bulma**: P-only controller ile critical gain (sustained oscillation)
+2. **Tu ölçme**: Oscillation period
+3. **PID hesaplama**: ZN formülleri ile Kp, Ki, Kd
+
+**Otomatik ZN tuning:**
+
+```bash
+# Tek maneuver için
+python scripts/tune_ziegler_nichols.py --maneuver circular
+
+# Tüm manevralar için
+python scripts/tune_ziegler_nichols.py --all
+```
+
+**Çıktı:**
+- Ultimate gain (Ku) ve period (Tu)
+- 3 ZN variant: Classic, Pessen, No Overshoot
+- Her variant için performance metrics
+- En iyi variant'ın seçimi
+
+### RL vs ZN Comparison
+
+```bash
+# Tek maneuver karşılaştır
+python scripts/compare_methods.py --maneuver circular --n_test 50
+
+# Tüm manevralar karşılaştır
+python scripts/compare_methods.py --all
+```
+
+**Metrics:**
+- Hit rate (%)
+- Average hit time (steps)
+- Average final distance (m)
+- Overshoot (m)
+- Trajectory smoothness (jerk)
+
+**Sonuçlar:**
+- `results/ziegler_nichols/` - ZN tuning sonuçları
+- `results/comparison/` - RL vs ZN karşılaştırma
+- `results/comparison/plots/` - Trajectory grafikleri
+
+### Beklenen Sonuçlar
+
+| Method | Circular Hit Rate | Evasive Hit Rate | Training Time |
+|--------|-------------------|------------------|---------------|
+| **Ziegler-Nichols** | ~60-70% | ~40-50% | ~10 min |
+| **RL (RecurrentPPO)** | ~75-85% | ~55-65% | ~30 min |
+
+**RL Avantajları:**
+- Daha yüksek hit rate
+- Daha smooth trajectories
+- Complex maneuvers için daha iyi
+- Adaptable (different scenarios)
+
+**ZN Avantajları:**
+- Daha hızlı tuning
+- No training data needed
+- Interpretable formulas
+- Well-established method
+
+### Makale İçin
+
+Bu comparison şunları gösterir:
+
+1. **RL'in üstünlüğü**: Complex, dynamic targets için
+2. **ZN'nin sınırları**: Fixed gain, tek scenario optimize
+3. **Trade-off**: Training time vs performance
+4. **Future work**: Hybrid approaches, online adaptation
+
