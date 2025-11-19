@@ -204,10 +204,13 @@ class EpisodicFixedPIDEnv(gym.Env):
                  target_speed=1000.0, downsample_rate=10):
         super().__init__()
 
-        # Action: Direct PID parameter values (WIDE range for large simulation)
+        # Action: Logarithmic space for Kp (better exploration), linear for Ki/Kd
+        # Kp: log scale [10^2, 10^4] = [100, 10000]
+        # Ki: linear [0, 50]
+        # Kd: linear [0, 50]
         self.action_space = spaces.Box(
-            low=np.array([0.1, 0.0, 0.0], dtype=np.float32),
-            high=np.array([10000.0, 50.0, 50.0], dtype=np.float32),
+            low=np.array([2.0, 0.0, 0.0], dtype=np.float32),   # log10(100) = 2.0
+            high=np.array([4.0, 50.0, 50.0], dtype=np.float32), # log10(10000) = 4.0
             dtype=np.float32
         )
 
@@ -288,12 +291,26 @@ class EpisodicFixedPIDEnv(gym.Env):
             truncated: Always False
             info: Episode statistics
         """
-        # 1. Extract PID parameters from action
-        Kp = float(action[0])
+        # 1. Extract and transform PID parameters from action
+        # Kp: Exponential transformation (log space → linear space)
+        log_kp = float(action[0])  # e.g., 3.2
+        Kp = 10 ** log_kp           # e.g., 10^3.2 = 1585
+
+        # Ki, Kd: Direct values
         Ki = float(action[1])
         Kd = float(action[2])
 
-        # 2. Run JIT-compiled simulation (10-50x faster!)
+        # 2. Discretize to interpretable values
+        Kp = round(Kp / 100) * 100  # Round to nearest 100: 1585 → 1600
+        Ki = round(Ki / 5) * 5       # Round to nearest 5: 7.3 → 5
+        Kd = round(Kd / 5) * 5       # Round to nearest 5: 12.8 → 15
+
+        # 3. Clamp to valid ranges
+        Kp = np.clip(Kp, 100, 10000)   # [100, 10000]
+        Ki = np.clip(Ki, 0, 50)         # [0, 50]
+        Kd = np.clip(Kd, 0, 50)         # [0, 50]
+
+        # 4. Run JIT-compiled simulation (10-50x faster!)
         trajectory_array, hit, hit_time, actual_steps = run_simulation_jit(
             self.missile.x, self.missile.y,
             self.missile.vx, self.missile.vy,
@@ -309,7 +326,7 @@ class EpisodicFixedPIDEnv(gym.Env):
         # Trim trajectory to actual steps
         trajectory_array = trajectory_array[:actual_steps]
 
-        # 3. Downsample trajectory (every 10 steps → 50 samples)
+        # 5. Downsample trajectory (every 10 steps → 50 samples)
 
         if len(trajectory_array) > 0:
             # Downsample
@@ -330,10 +347,10 @@ class EpisodicFixedPIDEnv(gym.Env):
             # No trajectory (immediate failure)
             obs = np.zeros(600, dtype=np.float32)
 
-        # 4. Calculate episodic reward
+        # 6. Calculate episodic reward
         reward = self._calculate_reward(trajectory_array, hit, hit_time)
 
-        # 5. Episode info
+        # 7. Episode info
         final_distance = trajectory_array[-1, 8] if len(trajectory_array) > 0 else 10000.0
 
         info = {

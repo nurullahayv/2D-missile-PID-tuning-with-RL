@@ -101,7 +101,7 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.2,
-            ent_coef=0.01,
+            ent_coef=0.05,  # Increased from 0.01 for better exploration (5x)
             policy_kwargs={
                 'lstm_hidden_size': 256,
                 'n_lstm_layers': 1,
@@ -124,7 +124,7 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.2,
-            ent_coef=0.01,
+            ent_coef=0.05,  # Increased from 0.01 for better exploration (5x)
             verbose=1,
             tensorboard_log=log_dir
         )
