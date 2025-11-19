@@ -13,7 +13,7 @@ from datetime import datetime
 import numpy as np
 from sb3_contrib import RecurrentPPO
 from stable_baselines3 import SAC, PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from src.episodic_fixed_pid_env import EpisodicFixedPIDEnv
@@ -70,17 +70,18 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
     print(f"Model directory: {model_dir}")
     print(f"Log directory: {log_dir}\n")
 
-    # Create vectorized environments
+    # Create vectorized environments (SubprocVecEnv for true multiprocessing)
     print("Creating environments...")
+    print("Using SubprocVecEnv for parallel CPU execution (works with Numba JIT)")
     if n_envs > 1:
-        env = DummyVecEnv([make_env(i, maneuver, missile_speed,
-                                     missile_accel, target_speed)
-                          for i in range(n_envs)])
+        env = SubprocVecEnv([make_env(i, maneuver, missile_speed,
+                                       missile_accel, target_speed)
+                            for i in range(n_envs)])
     else:
         env = DummyVecEnv([make_env(0, maneuver, missile_speed,
                                      missile_accel, target_speed)])
 
-    # Create eval environment
+    # Create eval environment (DummyVecEnv is fine for single env)
     eval_env = DummyVecEnv([make_env(0, maneuver, missile_speed,
                                       missile_accel, target_speed)])
 

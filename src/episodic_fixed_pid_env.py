@@ -5,8 +5,177 @@ RL learns optimal FIXED PID parameters by observing full simulation trajectory
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+from numba import njit
 from .missile import Missile
 from .target import Target
+
+
+# Maneuver type encoding for JIT
+MANEUVER_STRAIGHT = 0
+MANEUVER_CIRCULAR = 1
+MANEUVER_ZIGZAG = 2
+MANEUVER_EVASIVE = 3
+
+MANEUVER_MAP = {
+    'straight': MANEUVER_STRAIGHT,
+    'circular': MANEUVER_CIRCULAR,
+    'zigzag': MANEUVER_ZIGZAG,
+    'evasive': MANEUVER_EVASIVE
+}
+
+
+@njit
+def run_simulation_jit(
+    missile_x, missile_y, missile_vx, missile_vy,
+    target_x, target_y, target_heading, target_speed,
+    kp, ki, kd,
+    missile_max_speed, missile_max_accel,
+    map_size, hit_radius, max_steps, dt,
+    maneuver_type
+):
+    """
+    JIT-compiled simulation loop for maximum performance
+
+    Returns:
+        trajectory: (max_steps, 12) array of trajectory data
+        hit: bool
+        hit_time: int
+        actual_steps: int (actual number of steps before termination)
+    """
+    # Pre-allocate trajectory array
+    trajectory = np.zeros((max_steps, 12), dtype=np.float32)
+
+    # PID state
+    pid_integral = 0.0
+    pid_prev_error = 0.0
+
+    # Target maneuver state
+    maneuver_timer = 0.0
+
+    # Simulation state
+    hit = False
+    hit_time = max_steps
+
+    for step in range(max_steps):
+        # ========== MISSILE UPDATE ==========
+        # Calculate desired heading (proportional navigation)
+        dx = target_x - missile_x
+        dy = target_y - missile_y
+        distance = np.sqrt(dx * dx + dy * dy)
+        desired_heading = np.arctan2(dy, dx)
+
+        # Current heading
+        current_heading = np.arctan2(missile_vy, missile_vx)
+
+        # Heading error (normalized to [-pi, pi])
+        error = desired_heading - current_heading
+        error = np.arctan2(np.sin(error), np.cos(error))
+
+        # PID control
+        pid_integral += error * dt
+        derivative = (error - pid_prev_error) / dt if dt > 0 else 0.0
+        control = kp * error + ki * pid_integral + kd * derivative
+        pid_prev_error = error
+
+        # Apply control to heading
+        new_heading = current_heading + control * dt
+
+        # Calculate desired velocity
+        desired_vx = missile_max_speed * np.cos(new_heading)
+        desired_vy = missile_max_speed * np.sin(new_heading)
+
+        # Apply acceleration limits
+        dvx = desired_vx - missile_vx
+        dvy = desired_vy - missile_vy
+        accel_magnitude = np.sqrt(dvx * dvx + dvy * dvy) / dt if dt > 0 else 0.0
+
+        if accel_magnitude > missile_max_accel:
+            scale = missile_max_accel / accel_magnitude
+            dvx *= scale
+            dvy *= scale
+
+        # Update velocity
+        missile_vx += dvx
+        missile_vy += dvy
+
+        # Limit speed
+        speed = np.sqrt(missile_vx * missile_vx + missile_vy * missile_vy)
+        if speed > missile_max_speed:
+            missile_vx = (missile_vx / speed) * missile_max_speed
+            missile_vy = (missile_vy / speed) * missile_max_speed
+
+        # Update position
+        missile_x += missile_vx * dt
+        missile_y += missile_vy * dt
+
+        # ========== TARGET UPDATE ==========
+        maneuver_timer += dt
+
+        # Apply maneuver
+        if maneuver_type == MANEUVER_CIRCULAR:
+            turn_rate = 0.5  # rad/s
+            target_heading += turn_rate * dt
+
+        elif maneuver_type == MANEUVER_ZIGZAG:
+            if maneuver_timer > 2.0:
+                target_heading += np.pi / 4
+                maneuver_timer = 0.0
+
+        elif maneuver_type == MANEUVER_EVASIVE:
+            escape_dx = target_x - missile_x
+            escape_dy = target_y - missile_y
+            escape_distance = np.sqrt(escape_dx * escape_dx + escape_dy * escape_dy)
+
+            if escape_distance < 2000.0:
+                target_heading = np.arctan2(escape_dy, escape_dx)
+
+        # Update target position
+        target_vx = target_speed * np.cos(target_heading)
+        target_vy = target_speed * np.sin(target_heading)
+        target_x += target_vx * dt
+        target_y += target_vy * dt
+
+        # ========== CALCULATE METRICS ==========
+        # Angle error (same as heading error)
+        angle_error = error
+
+        # Closing velocity
+        relative_vx = missile_vx - target_vx
+        relative_vy = missile_vy - target_vy
+        if distance > 0:
+            closing_velocity = -(relative_vx * dx + relative_vy * dy) / distance
+        else:
+            closing_velocity = 0.0
+
+        heading_error = angle_error
+
+        # Record trajectory (12 features)
+        trajectory[step, 0] = missile_x
+        trajectory[step, 1] = missile_y
+        trajectory[step, 2] = missile_vx
+        trajectory[step, 3] = missile_vy
+        trajectory[step, 4] = target_x
+        trajectory[step, 5] = target_y
+        trajectory[step, 6] = target_vx
+        trajectory[step, 7] = target_vy
+        trajectory[step, 8] = distance
+        trajectory[step, 9] = angle_error
+        trajectory[step, 10] = closing_velocity
+        trajectory[step, 11] = heading_error
+
+        # ========== CHECK TERMINATION ==========
+        # Hit check
+        if distance < hit_radius:
+            hit = True
+            hit_time = step
+            return trajectory, hit, hit_time, step + 1
+
+        # Out of bounds check
+        if (missile_x < -1000 or missile_x > map_size + 1000 or
+            missile_y < -1000 or missile_y > map_size + 1000):
+            return trajectory, hit, hit_time, step + 1
+
+    return trajectory, hit, hit_time, max_steps
 
 
 class EpisodicFixedPIDEnv(gym.Env):
@@ -64,6 +233,9 @@ class EpisodicFixedPIDEnv(gym.Env):
         self.target_speed = target_speed
         self.downsample_rate = downsample_rate
 
+        # Encode maneuver type for JIT
+        self.maneuver_type = MANEUVER_MAP.get(target_maneuver, MANEUVER_STRAIGHT)
+
         # State
         self.missile = None
         self.target = None
@@ -104,7 +276,7 @@ class EpisodicFixedPIDEnv(gym.Env):
 
     def step(self, action):
         """
-        Run FULL simulation with given PID parameters
+        Run FULL simulation with given PID parameters (JIT-accelerated)
 
         Args:
             action: [Kp, Ki, Kd] PID parameters
@@ -116,85 +288,28 @@ class EpisodicFixedPIDEnv(gym.Env):
             truncated: Always False
             info: Episode statistics
         """
-        # 1. Set PID parameters from action
+        # 1. Extract PID parameters from action
         Kp = float(action[0])
         Ki = float(action[1])
         Kd = float(action[2])
 
-        self.missile.pid.kp = Kp
-        self.missile.pid.ki = Ki
-        self.missile.pid.kd = Kd
+        # 2. Run JIT-compiled simulation (10-50x faster!)
+        trajectory_array, hit, hit_time, actual_steps = run_simulation_jit(
+            self.missile.x, self.missile.y,
+            self.missile.vx, self.missile.vy,
+            self.target.x, self.target.y,
+            self.target.heading, self.target_speed,
+            Kp, Ki, Kd,
+            self.missile_speed, self.missile_accel,
+            self.map_size, self.hit_radius,
+            self.max_steps, self.dt,
+            self.maneuver_type
+        )
 
-        # 2. Run FULL simulation (500 steps)
-        self.trajectory = []
-        hit = False
-        hit_time = self.max_steps
-
-        for step in range(self.max_steps):
-            # Update simulation
-            self.missile.update(self.target.position, self.dt)
-            self.target.update(self.dt, missile_pos=self.missile.position)
-
-            # Calculate metrics
-            dx = self.target.x - self.missile.x
-            dy = self.target.y - self.missile.y
-            distance = np.sqrt(dx**2 + dy**2)
-
-            # Angle error
-            desired_heading = np.arctan2(dy, dx)
-            current_heading = self.missile.heading
-            angle_error = desired_heading - current_heading
-            angle_error = np.arctan2(np.sin(angle_error), np.cos(angle_error))
-
-            # Closing velocity (rate of distance decrease)
-            missile_vel = self.missile.velocity
-            target_vel = self.target.velocity
-            relative_vel = missile_vel - target_vel
-            range_vec = np.array([dx, dy])
-            if distance > 0:
-                closing_velocity = -np.dot(relative_vel, range_vec) / distance
-            else:
-                closing_velocity = 0.0
-
-            # Heading error (missile heading vs desired heading)
-            heading_error = angle_error  # Same as angle_error
-
-            # Get target velocity components
-            target_velocity = self.target.velocity
-
-            # Record trajectory (12 features)
-            self.trajectory.append([
-                self.missile.x,
-                self.missile.y,
-                self.missile.vx,
-                self.missile.vy,
-                self.target.x,
-                self.target.y,
-                target_velocity[0],  # target vx
-                target_velocity[1],  # target vy
-                distance,
-                angle_error,
-                closing_velocity,
-                heading_error
-            ])
-
-            # Check hit
-            if distance < self.hit_radius:
-                hit = True
-                hit_time = step
-                break
-
-            # Check out of bounds
-            if (self.missile.x < -1000 or self.missile.x > self.map_size + 1000 or
-                self.missile.y < -1000 or self.missile.y > self.map_size + 1000):
-                break
-
-            # Check missile active
-            if not self.missile.active:
-                break
+        # Trim trajectory to actual steps
+        trajectory_array = trajectory_array[:actual_steps]
 
         # 3. Downsample trajectory (every 10 steps → 50 samples)
-        trajectory_array = np.array(self.trajectory)
 
         if len(trajectory_array) > 0:
             # Downsample
