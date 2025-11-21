@@ -47,7 +47,7 @@ class MetaEpisodicPIDEnv(gym.Env):
                  window_size=5,
                  map_size=10000.0,
                  hit_radius=50.0,
-                 max_steps=500,
+                 max_steps=1300,
                  dt=0.01,
                  target_maneuver='circular',
                  missile_speed=1000.0,
@@ -59,7 +59,7 @@ class MetaEpisodicPIDEnv(gym.Env):
             window_size: Number of recent episodes to keep in history (default: 5)
             map_size: Map size (meters)
             hit_radius: Hit detection radius (meters)
-            max_steps: Max steps per simulation
+            max_steps: Max steps per simulation (default: 1300)
             dt: Time step (seconds)
             target_maneuver: Target maneuver type
             missile_speed: Missile max speed (m/s)

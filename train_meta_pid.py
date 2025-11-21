@@ -11,8 +11,8 @@ Key Features:
 - True MDP with sequential decision making
 
 Usage:
-    python train_meta_pid.py --algorithm RecurrentPPO --maneuver circular --timesteps 50000
-    python train_meta_pid.py --algorithm PPO --maneuver circular --timesteps 50000 --n_envs 8
+    python train_meta_pid.py --algorithm RecurrentPPO --maneuver circular --timesteps 5000000
+    python train_meta_pid.py --algorithm PPO --maneuver circular --timesteps 5000000 --n_envs 8
 """
 import argparse
 import os
@@ -27,12 +27,13 @@ from src.meta_episodic_pid_env import MetaEpisodicPIDEnv
 
 
 def make_env(rank, maneuver='circular', episodes_per_meta=10, window_size=5,
-             missile_speed=1000.0, missile_accel=1000.0, target_speed=1000.0):
+             max_steps=1300, missile_speed=1000.0, missile_accel=1000.0, target_speed=1000.0):
     """Create a monitored Meta-Episodic environment"""
     def _init():
         env = MetaEpisodicPIDEnv(
             episodes_per_meta=episodes_per_meta,
             window_size=window_size,
+            max_steps=max_steps,
             target_maneuver=maneuver,
             missile_speed=missile_speed,
             missile_accel=missile_accel,
@@ -44,8 +45,8 @@ def make_env(rank, maneuver='circular', episodes_per_meta=10, window_size=5,
 
 
 def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
-          total_timesteps=50_000, save_freq=5_000,
-          episodes_per_meta=10, window_size=5,
+          total_timesteps=5_000_000, save_freq=50_000,
+          episodes_per_meta=10, window_size=5, max_steps=1300,
           missile_speed=1000.0, missile_accel=1000.0, target_speed=1000.0):
     """
     Train RL agent with Meta-Episodic MDP formulation
@@ -58,6 +59,7 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
         save_freq: Checkpoint save frequency
         episodes_per_meta: Number of episodes per meta-episode (default: 10)
         window_size: History window size (default: 5)
+        max_steps: Maximum simulation steps per episode (default: 1300)
         missile_speed: Missile max speed (m/s)
         missile_accel: Missile max acceleration (m/s²)
         target_speed: Target speed (m/s)
@@ -70,10 +72,12 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
     print(f"Target: {target_speed} m/s")
     print(f"Episodes per Meta-Episode: {episodes_per_meta}")
     print(f"History Window Size: {window_size}")
+    print(f"Max Steps per Episode: {max_steps}")
     print(f"Parallel Environments: {n_envs}")
     print(f"Total Timesteps: {total_timesteps:,}")
     print(f"  → Meta-Episodes: {total_timesteps // episodes_per_meta:,}")
     print(f"  → Total Episodes: {total_timesteps:,}")
+    print(f"  → Total Simulation Steps: {total_timesteps * max_steps:,}")
     print(f"{'='*70}\n")
 
     # Create directories
@@ -91,19 +95,19 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
     print("Using SubprocVecEnv for parallel CPU execution (works with Numba JIT)")
     if n_envs > 1:
         env = SubprocVecEnv([
-            make_env(i, maneuver, episodes_per_meta, window_size,
+            make_env(i, maneuver, episodes_per_meta, window_size, max_steps,
                     missile_speed, missile_accel, target_speed)
             for i in range(n_envs)
         ])
     else:
         env = DummyVecEnv([
-            make_env(0, maneuver, episodes_per_meta, window_size,
+            make_env(0, maneuver, episodes_per_meta, window_size, max_steps,
                     missile_speed, missile_accel, target_speed)
         ])
 
     # Create eval environment
     eval_env = DummyVecEnv([
-        make_env(0, maneuver, episodes_per_meta, window_size,
+        make_env(0, maneuver, episodes_per_meta, window_size, max_steps,
                 missile_speed, missile_accel, target_speed)
     ])
 
@@ -163,8 +167,8 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
             env,
             policy_kwargs=policy_kwargs,
             learning_rate=3e-4,
-            buffer_size=100_000,
-            learning_starts=1000,
+            buffer_size=1000,
+            learning_starts=100,
             batch_size=256,
             tau=0.005,
             gamma=0.99,
@@ -217,14 +221,14 @@ def train(algorithm='RecurrentPPO', maneuver='circular', n_envs=4,
 
     # Test the learned model
     print("Testing learned Meta-PID agent...")
-    test_learned_meta_pid(model, algorithm, maneuver, episodes_per_meta, window_size,
+    test_learned_meta_pid(model, algorithm, maneuver, episodes_per_meta, window_size, max_steps,
                           missile_speed, missile_accel, target_speed)
 
     return model
 
 
 def test_learned_meta_pid(model, algorithm, maneuver='circular',
-                          episodes_per_meta=10, window_size=5,
+                          episodes_per_meta=10, window_size=5, max_steps=1300,
                           missile_speed=1000.0, missile_accel=1000.0,
                           target_speed=1000.0, n_meta_episodes=5):
     """
@@ -236,6 +240,7 @@ def test_learned_meta_pid(model, algorithm, maneuver='circular',
         maneuver: Target maneuver type
         episodes_per_meta: Episodes per meta-episode
         window_size: History window size
+        max_steps: Maximum simulation steps per episode
         n_meta_episodes: Number of meta-episodes to test
     """
     print(f"\n{'='*70}")
@@ -245,6 +250,7 @@ def test_learned_meta_pid(model, algorithm, maneuver='circular',
     env = MetaEpisodicPIDEnv(
         episodes_per_meta=episodes_per_meta,
         window_size=window_size,
+        max_steps=max_steps,
         target_maneuver=maneuver,
         missile_speed=missile_speed,
         missile_accel=missile_accel,
@@ -333,14 +339,16 @@ if __name__ == "__main__":
                        help='Target maneuver type')
     parser.add_argument('--n_envs', type=int, default=4,
                        help='Number of parallel environments')
-    parser.add_argument('--timesteps', type=int, default=50_000,
+    parser.add_argument('--timesteps', type=int, default=5_000_000,
                        help='Total training timesteps (episodes)')
-    parser.add_argument('--save_freq', type=int, default=5_000,
+    parser.add_argument('--save_freq', type=int, default=50_000,
                        help='Checkpoint save frequency')
     parser.add_argument('--episodes_per_meta', type=int, default=10,
                        help='Number of episodes per meta-episode')
     parser.add_argument('--window_size', type=int, default=5,
                        help='History window size')
+    parser.add_argument('--max_steps', type=int, default=1300,
+                       help='Maximum simulation steps per episode')
     parser.add_argument('--missile_speed', type=float, default=1000.0,
                        help='Missile max speed (m/s)')
     parser.add_argument('--missile_accel', type=float, default=1000.0,
@@ -358,6 +366,7 @@ if __name__ == "__main__":
         save_freq=args.save_freq,
         episodes_per_meta=args.episodes_per_meta,
         window_size=args.window_size,
+        max_steps=args.max_steps,
         missile_speed=args.missile_speed,
         missile_accel=args.missile_accel,
         target_speed=args.target_speed
